@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict nchFIMBjEtKUzMkSpxwgXBz1QlALebX4B7nQe1HznJLEsu3yxdJGMUahpFo3tvH
+\restrict yDLqZvDARf0bPkKa1jzkKwzgAkQE9ifmYL31fxi90dVcGb1XBt9VgBOngElxhmB
 
 -- Dumped from database version 18.4
 -- Dumped by pg_dump version 18.4
@@ -260,5 +260,5 @@ ALTER TABLE ONLY public.leituras
 -- PostgreSQL database dump complete
 --
 
-\unrestrict nchFIMBjEtKUzMkSpxwgXBz1QlALebX4B7nQe1HznJLEsu3yxdJGMUahpFo3tvH
+\unrestrict yDLqZvDARf0bPkKa1jzkKwzgAkQE9ifmYL31fxi90dVcGb1XBt9VgBOngElxhmB
 
