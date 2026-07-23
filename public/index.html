@@ -83,6 +83,13 @@
     .badge-normal  { background:var(--verde);   color:#fff; }
     .cc-hint { font-size:.68rem; color:#bbb; margin-top:.5rem; text-align:right; }
 
+    /* PREVISÃO 24H */
+    .prev-header { font-size:.7rem; font-weight:700; color:#666; margin-bottom:.3rem; display:flex; align-items:center; gap:.3rem; }
+    .prev-valor  { font-size:1.35rem; font-weight:800; }
+    .prev-delta  { font-size:.82rem; font-weight:700; margin-left:.4rem; }
+    .prev-detalhes { font-size:.68rem; color:#888; margin-top:.22rem; line-height:1.5; }
+    .prev-conf   { font-size:.63rem; color:#bbb; margin-top:.18rem; }
+
     /* CHUVA — cards */
     .chuva-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:.7rem; }
     .chuva-card {
@@ -598,6 +605,7 @@ async function carregarStatusAtual() {
     renderCotas(d.cotas ?? {});
     renderChuva(d.chuvas ?? {});
     atualizarMapaRio(d.cotas ?? {});
+    carregarPrevisaoLajeado();
   } catch(e) {
     document.getElementById('cotas-grid').innerHTML = '<p style="color:#c00;font-size:.84rem">Erro ao carregar cotas.</p>';
     document.getElementById('chuva-grid').innerHTML = '<p style="color:#c00;font-size:.84rem">Erro ao carregar chuva.</p>';
@@ -646,6 +654,12 @@ function renderCotas(cotas) {
       sub = `<span style="color:#888">${(inund-cota).toFixed(2)}m abaixo da inundação</span>`;
     }
 
+    const previsaoBox = id === 'taquari_1_cota'
+      ? `<div id="previsao-lajeado-box" style="margin-top:.75rem;border-top:1px dashed #ddd;padding-top:.65rem">
+           <span style="font-size:.68rem;color:#bbb">Calculando previsão 24h...</span>
+         </div>`
+      : '';
+
     el.innerHTML += `
       <div class="cota-card ${classe}" onclick="abrirGrafico('${id}','cota','${cfg.nome}')">
         <div class="cc-badge ${badgeClass}">${badge}</div>
@@ -667,6 +681,7 @@ function renderCotas(cotas) {
           <span style="font-size:.7rem;color:#aaa">${ts}</span>
           ${tendenciaHTML(dado)}
         </div>
+        ${previsaoBox}
         <div class="cc-hint">Clique para ver histórico ↗</div>
       </div>`;
   });
@@ -728,6 +743,72 @@ function tendenciaHTML(dado) {
             padding:.18rem .6rem;font-size:.72rem;font-weight:600;color:#666">
             → Estável
           </span>`;
+}
+
+// ── PREVISÃO 24H — LAJEADO ───────────────────────────────────────────────────
+async function carregarPrevisaoLajeado() {
+  const box = document.getElementById('previsao-lajeado-box');
+  if (!box) return;
+
+  try {
+    const d = await api('/previsao-lajeado');
+
+    if (d.status === 'sem_dados') {
+      box.innerHTML = `<span style="font-size:.68rem;color:#bbb">Sem dados para previsão.</span>`;
+      return;
+    }
+
+    const cotaP  = d.cota_projetada_24h_m;
+    const delta  = d.delta_esperado_m;
+    const chuva  = d.chuva_media_24h_mm;
+    const conf   = d.confianca;
+    const est    = d.estacoes_upstream ?? {};
+
+    // Cor e seta do delta
+    let deltaCor = '#888', deltaIcon = '→';
+    if (delta > 0.05)       { deltaCor = '#ef5350'; deltaIcon = '↑'; }
+    else if (delta < -0.05) { deltaCor = '#26a69a'; deltaIcon = '↓'; }
+
+    // Cor da cota projetada conforme situação
+    let corCota = '#1a6faf';
+    if (cotaP >= d.cota_inundacao_m)  corCota = '#c0392b';
+    else if (cotaP >= d.cota_atencao_m) corCota = '#e07b00';
+
+    // Resumo das estações upstream (as 3 com maior contribuição)
+    const resumoEst = Object.values(est)
+      .filter(e => e.tendencia !== 'estavel' || Math.abs(e.taxa_hora_m) >= 0.005)
+      .sort((a, b) => Math.abs(b.contribuicao_m) - Math.abs(a.contribuicao_m))
+      .slice(0, 3)
+      .map(e => {
+        const seta = e.tendencia === 'subindo' ? '↑' : e.tendencia === 'baixando' ? '↓' : '→';
+        const taxa = Math.abs(e.taxa_hora_m * 100).toFixed(0);
+        return `${e.nome} ${seta}${taxa}cm/h`;
+      })
+      .join(' · ');
+
+    const chuvaTexto = chuva > 0
+      ? `🌧 ${chuva.toFixed(0)}mm/24h nas cabeceiras`
+      : 'Sem chuva significativa nas cabeceiras';
+
+    const confLabel = { baixa: 'confiança baixa', muito_baixa: 'confiança muito baixa', insuficiente: 'dados insuficientes' }[conf] ?? conf;
+    const deltaTexto = Math.abs(delta) >= 0.05
+      ? `${deltaIcon} ${delta > 0 ? '+' : ''}${delta.toFixed(2)}m`
+      : '→ estável';
+
+    box.innerHTML = `
+      <div class="prev-header"><span>🔮</span> Previsão 24h — se as condições atuais continuarem</div>
+      <div style="display:flex;align-items:baseline;gap:.35rem">
+        <span class="prev-valor" style="color:${corCota}">~${cotaP.toFixed(2)} m</span>
+        <span class="prev-delta" style="color:${deltaCor}">${deltaTexto}</span>
+      </div>
+      ${resumoEst ? `<div class="prev-detalhes">${resumoEst}</div>` : ''}
+      <div class="prev-detalhes">${chuvaTexto}</div>
+      <div class="prev-conf">Estimativa heurística · ${confLabel}</div>`;
+
+  } catch {
+    const box2 = document.getElementById('previsao-lajeado-box');
+    if (box2) box2.innerHTML = `<span style="font-size:.68rem;color:#bbb">Previsão indisponível.</span>`;
+  }
 }
 
 // ── SLIDERS DO SIMULADOR ──────────────────────────────────────────────────────

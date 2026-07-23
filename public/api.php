@@ -67,7 +67,8 @@ try {
         $method === 'GET'  && $path === '/status-atual'     => routeStatusAtual($pdo, $cfg),
         $method === 'GET'  && $path === '/leituras'         => routeLeituras($pdo),
         $method === 'GET'  && $path === '/eventos'          => routeEventos($pdo),
-        $method === 'GET'  && $path === '/razao-historica'  => routeRazao($pdo, $cfg),
+        $method === 'GET'  && $path === '/razao-historica'    => routeRazao($pdo, $cfg),
+        $method === 'GET'  && $path === '/previsao-lajeado' => routePrevisaoLajeado($pdo, $cfg),
         $method === 'POST' && $path === '/projetar'         => routeProjetar($pdo, $cfg),
         $method === 'POST' && $path === '/coletar'          => routeColetar($pdo, $cfg, $logger),
         default => throw new \InvalidArgumentException('Rota não encontrada', 404),
@@ -320,6 +321,154 @@ function routeRazao(\PDO $pdo, array $cfg): array
                 $historico['razao_media']
               )
             : 'Aguardando eventos fechados para calibrar a razão.',
+    ];
+}
+
+function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
+{
+    // Defasagens estimadas (horas) e pesos de contribuição para Lajeado
+    // Defasagens baseadas na distância e velocidade típica de propagação de cheias no Taquari
+    $upstream = [
+        'taquari_2_cota'  => ['nome' => 'Encantado',     'lag_h' => 9,  'peso' => 0.55],
+        'taquari_33_cota' => ['nome' => 'Barra do Fão',  'lag_h' => 11, 'peso' => 0.12],
+        'taquari_3_cota'  => ['nome' => 'Muçum',         'lag_h' => 17, 'peso' => 0.28],
+        'taquari_32_cota' => ['nome' => 'Santa Tereza',  'lag_h' => 21, 'peso' => 0.03],
+        'taquari_55_cota' => ['nome' => 'Linha Colombo', 'lag_h' => 23, 'peso' => 0.02],
+    ];
+
+    // Cota atual e taxa de Lajeado
+    $stmtLaj = $pdo->query(
+        "SELECT valor, timestamp FROM leituras
+         WHERE estacao_id = 'taquari_1_cota' AND tipo = 'cota'
+         ORDER BY timestamp DESC LIMIT 1"
+    );
+    $rowLaj = $stmtLaj->fetch();
+    if (!$rowLaj) {
+        return ['status' => 'sem_dados', 'mensagem' => 'Sem leituras de cota para Lajeado.'];
+    }
+    $cotaAtual = (float)$rowLaj['valor'];
+
+    // Busca taxas de variação de cada estação upstream (últimas ~2h = 8 leituras de 15min)
+    $stmtTaxa = $pdo->prepare(
+        "SELECT valor, timestamp FROM leituras
+         WHERE estacao_id = :id AND tipo = 'cota'
+         ORDER BY timestamp DESC LIMIT 8"
+    );
+
+    $deltaPonderado = 0.0;
+    $detalhes       = [];
+    $nContrib       = 0;
+
+    foreach ($upstream as $id => $info) {
+        $stmtTaxa->execute([':id' => $id]);
+        $leituras = $stmtTaxa->fetchAll();
+        if (count($leituras) < 2) continue;
+
+        $maisRecente = (float)$leituras[0]['valor'];
+        $refIdx      = min(4, count($leituras) - 1);
+        $referencia  = (float)$leituras[$refIdx]['valor'];
+        $delta       = $maisRecente - $referencia;
+        $intervaloH  = (strtotime($leituras[0]['timestamp']) - strtotime($leituras[$refIdx]['timestamp'])) / 3600;
+        $taxaHora    = $intervaloH > 0.1 ? $delta / $intervaloH : 0.0;
+
+        // Horas dentro da janela de 24h que ainda vão impactar Lajeado
+        $horasUteis = max(0, 24 - $info['lag_h']);
+
+        // Contribuição delta ponderada pelo peso da estação
+        $contrib = $taxaHora * $horasUteis * $info['peso'];
+        $deltaPonderado += $contrib;
+        $nContrib++;
+
+        $tendencia = abs($taxaHora) < 0.005 ? 'estavel'
+                   : ($taxaHora > 0 ? 'subindo' : 'baixando');
+
+        $detalhes[$id] = [
+            'nome'           => $info['nome'],
+            'cota_atual_m'   => round($maisRecente, 2),
+            'taxa_hora_m'    => round($taxaHora, 3),
+            'tendencia'      => $tendencia,
+            'defasagem_h'    => $info['lag_h'],
+            'horas_uteis'    => $horasUteis,
+            'contribuicao_m' => round($contrib, 3),
+        ];
+    }
+
+    // Chuva acumulada nas últimas 24h como indicador de risco adicional
+    $desde24h  = date('Y-m-d H:i:s', strtotime('-24 hours'));
+    $stmtChuva = $pdo->prepare(
+        "SELECT estacao_id, SUM(valor) AS total
+         FROM leituras
+         WHERE tipo = 'chuva' AND timestamp >= :desde
+         GROUP BY estacao_id"
+    );
+    $stmtChuva->execute([':desde' => $desde24h]);
+    $chuvasRows  = $stmtChuva->fetchAll();
+    $chuvaMedia  = 0.0;
+    $chuvaMaxima = 0.0;
+    if (!empty($chuvasRows)) {
+        $totais      = array_map('floatval', array_column($chuvasRows, 'total'));
+        $chuvaMedia  = array_sum($totais) / count($totais);
+        $chuvaMaxima = max($totais);
+    }
+
+    // Se há razão histórica calibrada, usa para adicionar contribuição da chuva recente
+    $deltaChuvaBruto = 0.0;
+    $razaoMedia = 0.0;
+    $stmtR = $pdo->query(
+        "SELECT AVG(razao_calculada) FROM eventos
+         WHERE status = 'fechado' AND razao_calculada IS NOT NULL AND razao_calculada > 0"
+    );
+    $razaoMedia = (float)($stmtR->fetchColumn() ?: 0);
+
+    if ($razaoMedia > 0 && $chuvaMedia > 5) {
+        // Chuva das últimas 12h ainda vai chegar em Lajeado (lag médio ~16h desde cabeceira)
+        $desde12h    = date('Y-m-d H:i:s', strtotime('-12 hours'));
+        $stmtCh12    = $pdo->prepare(
+            "SELECT SUM(valor) / NULLIF(COUNT(DISTINCT estacao_id), 0) AS media
+             FROM leituras WHERE tipo = 'chuva' AND timestamp >= :desde"
+        );
+        $stmtCh12->execute([':desde' => $desde12h]);
+        $chuva12h = (float)($stmtCh12->fetchColumn() ?: 0);
+
+        // Estima impacto: chuva recente / razão * fator conservador (50% já chegou)
+        $deltaChuvaBruto = ($chuva12h * 0.5) / $razaoMedia;
+        $deltaPonderado += $deltaChuvaBruto;
+    }
+
+    $cotaProjetada = round($cotaAtual + $deltaPonderado, 2);
+    $cfgAtencao    = $cfg['evento']['cota_atencao']['taquari_1_cota']   ?? 15.0;
+    $cfgInundacao  = $cfg['evento']['cota_inundacao']['taquari_1_cota'] ?? 19.0;
+
+    // Situação projetada
+    $situacao = 'normal';
+    if ($cotaProjetada >= $cfgInundacao) $situacao = 'cheia';
+    elseif ($cotaProjetada >= $cfgAtencao) $situacao = 'atencao';
+
+    // Confiança aumenta com mais estações e com razão calibrada
+    $confianca = match (true) {
+        $nContrib >= 4 && $razaoMedia > 0 => 'baixa',
+        $nContrib >= 3                     => 'baixa',
+        $nContrib >= 2                     => 'muito_baixa',
+        default                            => 'insuficiente',
+    };
+
+    return [
+        'metodo'                => $razaoMedia > 0 ? 'heuristico_com_razao' : 'heuristico',
+        'cota_atual_m'          => $cotaAtual,
+        'cota_projetada_24h_m'  => $cotaProjetada,
+        'delta_esperado_m'      => round($deltaPonderado, 2),
+        'situacao_projetada'    => $situacao,
+        'cota_atencao_m'        => $cfgAtencao,
+        'cota_inundacao_m'      => $cfgInundacao,
+        'chuva_media_24h_mm'    => round($chuvaMedia, 1),
+        'chuva_maxima_24h_mm'   => round($chuvaMaxima, 1),
+        'delta_chuva_m'         => round($deltaChuvaBruto, 3),
+        'confianca'             => $confianca,
+        'n_estacoes_contrib'    => $nContrib,
+        'estacoes_upstream'     => $detalhes,
+        'aviso'                 => 'Estimativa heurística baseada em tendências atuais e defasagens fixas. '
+                                 . 'Assume que as condições se mantêm nas próximas horas. '
+                                 . 'Precisão melhora após acúmulo de episódios históricos calibrados.',
     ];
 }
 
