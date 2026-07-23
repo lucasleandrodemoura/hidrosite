@@ -1,0 +1,37 @@
+{
+    "name": "vale-taquari/hidro-coletor",
+    "description": "Coletor de dados hidrológicos do SGB para a bacia do Rio Taquari-Antas com projeção de cheia em Lajeado/Estrela",
+    "type": "project",
+    "license": "LicenseRef-ValeTaquariTempo",
+    "authors": [
+        {
+            "name": "ValeTaquariTempo Contributors",
+            "homepage": "https://github.com/vale-taquari/hidro-coletor"
+        }
+    ],
+    "require": {
+        "php": ">=8.1",
+        "vlucas/phpdotenv": "^5.6"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "ValeTaquari\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "ValeTaquari\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "collect": "php cron/collect.php",
+        "migrate": "php migrations/run.php",
+        "serve": "php -S localhost:8080 public/api.php"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}

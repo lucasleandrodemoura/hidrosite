@@ -1,0 +1,16 @@
+# Dependências
+/vendor/
+
+# Ambiente local (contém senhas)
+.env
+
+# Dados e logs gerados em runtime
+/data/*.sqlite
+/logs/*.log
+
+# Backups gerados automaticamente (o backup inicial está em database/ e é versionado)
+/database/hidro_backup_*.sql
+
+# Sistema operacional
+.DS_Store
+Thumbs.db

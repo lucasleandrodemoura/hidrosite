@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vale Taquari Tempo — Monitoramento Hidrológico</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    :root {
+      --azul:    #1a6faf;
+      --azul-l:  #2a8fd4;
+      --verde:   #0e8a4a;
+      --laranja: #e07b00;
+      --alerta:  #c0392b;
+      --cinza:   #f4f6f8;
+      --borda:   #d0d7de;
+      --texto:   #1a1a2e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui,-apple-system,sans-serif; background: var(--cinza); color: var(--texto); min-height: 100vh; }
+
+    /* HEADER */
+    header {
+      background: linear-gradient(135deg, var(--azul) 0%, #0d4f83 100%);
+      color: #fff; padding: 1.4rem 2rem;
+      display: flex; align-items: center; gap: 1rem;
+      box-shadow: 0 2px 8px #0003;
+    }
+    header .logo { font-size: 2rem; }
+    header h1 { font-size: 1.3rem; font-weight: 700; line-height: 1.2; }
+    header p  { font-size: .8rem; opacity: .85; margin-top: .15rem; }
+    .badge-status {
+      margin-left: auto; background: #fff2; border: 1px solid #fff4;
+      border-radius: 20px; padding: .3rem .85rem; font-size: .78rem;
+      display: flex; align-items: center; gap: .4rem;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #2ecc71; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+    @keyframes pulsar-rio { 0%{transform:scale(1);opacity:.6} 100%{transform:scale(1.8);opacity:0} }
+    #mapa-rio [id^="pulso-"] { animation: pulsar-rio 1.6s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+
+    /* LAYOUT */
+    main { max-width: 1100px; margin: 0 auto; padding: 1.8rem 1.4rem; }
+
+    /* MÉTRICAS */
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit,minmax(190px,1fr)); gap: .9rem; margin-bottom: 1.6rem; }
+    .card { background:#fff; border:1px solid var(--borda); border-radius:12px; padding:1.1rem 1.3rem; box-shadow:0 1px 4px #0001; }
+    .card .label { font-size:.7rem; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:#666; }
+    .card .value { font-size:1.85rem; font-weight:700; color:var(--azul); margin:.2rem 0 .1rem; }
+    .card .sub   { font-size:.73rem; color:#888; }
+
+    /* SECTION */
+    .section { background:#fff; border:1px solid var(--borda); border-radius:12px; margin-bottom:1.4rem; overflow:hidden; }
+    .section-header {
+      padding:.9rem 1.3rem; border-bottom:1px solid var(--borda);
+      display:flex; align-items:center; gap:.6rem; font-weight:600; font-size:.92rem;
+    }
+    .section-body { padding:1.3rem; }
+
+    /* COTAS — cards clicáveis */
+    .cotas-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:1rem; }
+    .cota-card {
+      border:2px solid var(--borda); border-radius:10px; padding:1.1rem 1.2rem;
+      cursor:pointer; transition:box-shadow .15s, border-color .15s; position:relative; overflow:hidden;
+    }
+    .cota-card:hover { box-shadow:0 4px 16px #0002; border-color:var(--azul-l); }
+    .cota-card.cheia       { border-color:var(--alerta);  background:#fff8f7; }
+    .cota-card.atencao     { border-color:var(--laranja); background:#fff9f0; }
+    .cota-card.normal      { border-color:#b2dfdb;        background:#f0fdf8; }
+    .cota-card .cc-nome    { font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#666; }
+    .cota-card .cc-valor   { font-size:2.4rem; font-weight:800; margin:.15rem 0; line-height:1; }
+    .cota-card .cc-sub     { font-size:.75rem; color:#888; }
+    .cota-card .cc-bar     { height:6px; border-radius:3px; background:#eee; margin:.8rem 0 .4rem; overflow:hidden; }
+    .cota-card .cc-fill    { height:100%; border-radius:3px; transition:width .4s; }
+    .cota-card .cc-ref     { display:flex; justify-content:space-between; font-size:.7rem; color:#aaa; }
+    .cota-card .cc-badge   {
+      position:absolute; top:.7rem; right:.8rem;
+      font-size:.68rem; font-weight:700; padding:.2rem .55rem; border-radius:20px;
+    }
+    .badge-cheia   { background:var(--alerta);  color:#fff; }
+    .badge-atencao { background:var(--laranja); color:#fff; }
+    .badge-normal  { background:var(--verde);   color:#fff; }
+    .cc-hint { font-size:.68rem; color:#bbb; margin-top:.5rem; text-align:right; }
+
+    /* CHUVA — cards */
+    .chuva-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:.7rem; }
+    .chuva-card {
+      background:var(--cinza); border:1px solid var(--borda); border-radius:8px;
+      padding:.8rem 1rem; cursor:pointer; transition:box-shadow .15s;
+      display:flex; justify-content:space-between; align-items:center;
+    }
+    .chuva-card:hover { box-shadow:0 2px 10px #0002; }
+    .chuva-card .cn  { font-size:.82rem; font-weight:600; }
+    .chuva-card .cv  { font-size:1.4rem; font-weight:700; color:var(--azul); }
+    .chuva-card .cs  { font-size:.68rem; color:#888; }
+
+    /* SIMULADOR */
+    .sim-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:.8rem; margin-bottom:1.1rem; }
+    .sim-field label { display:block; font-size:.77rem; font-weight:600; color:#555; margin-bottom:.3rem; }
+    .sim-field input[type=range] { width:100%; accent-color:var(--azul); }
+    .sim-field .vd { display:flex; justify-content:space-between; font-size:.75rem; margin-top:.15rem; }
+    .sim-field .vm { font-weight:700; color:var(--azul); }
+    .btn-projetar {
+      background:var(--azul); color:#fff; border:none; border-radius:8px;
+      padding:.65rem 1.8rem; font-size:.92rem; font-weight:600; cursor:pointer; transition:background .15s;
+    }
+    .btn-projetar:hover { background:var(--azul-l); }
+    .btn-projetar:disabled { background:#aaa; cursor:not-allowed; }
+    #resultado { margin-top:1.1rem; display:none; }
+    .result-box { border-radius:10px; padding:1.1rem 1.3rem; border:2px solid; }
+    .result-box.normal  { border-color:var(--verde);   background:#f0faf4; }
+    .result-box.atencao { border-color:var(--laranja); background:#fff8f0; }
+    .result-box.critico { border-color:var(--alerta);  background:#fff0ef; }
+    .result-cota { font-size:2.2rem; font-weight:800; }
+    .result-label { font-size:.8rem; color:#666; margin-bottom:.25rem; }
+    .result-details { margin-top:.75rem; display:grid; grid-template-columns:1fr 1fr; gap:.45rem; font-size:.8rem; }
+    .result-details span { color:#555; }
+    .result-details strong { color:var(--texto); }
+    .aviso-sem-dados { background:#fffbea; border:1px solid #f1c40f; border-radius:8px; padding:.85rem 1.1rem; font-size:.83rem; color:#7d6200; margin-top:1rem; }
+
+    /* EVENTOS */
+    .ev-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+    .ev-table th { text-align:left; padding:.5rem .6rem; border-bottom:2px solid #eee; color:#666; font-size:.72rem; text-transform:uppercase; }
+    .ev-table td { padding:.5rem .6rem; border-bottom:1px solid #f0f0f0; }
+    .ev-table tr:last-child td { border-bottom:none; }
+
+    /* MODAL DE GRÁFICO */
+    .modal-overlay {
+      display:none; position:fixed; inset:0; background:#0006; z-index:1000;
+      align-items:center; justify-content:center;
+    }
+    .modal-overlay.open { display:flex; }
+    .modal {
+      background:#fff; border-radius:14px; width:min(860px,95vw); max-height:92vh;
+      display:flex; flex-direction:column; overflow:hidden;
+      box-shadow:0 20px 60px #0004;
+    }
+    .modal-header {
+      padding:1rem 1.3rem; border-bottom:1px solid var(--borda);
+      display:flex; align-items:center; justify-content:space-between;
+    }
+    .modal-title { font-weight:700; font-size:1rem; }
+    .modal-close { background:none; border:none; font-size:1.4rem; cursor:pointer; color:#888; line-height:1; padding:.2rem .4rem; border-radius:6px; }
+    .modal-close:hover { background:#f0f0f0; color:#333; }
+    .modal-toolbar { padding:.7rem 1.3rem; border-bottom:1px solid var(--borda); display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+    .range-btn {
+      background:var(--cinza); border:1px solid var(--borda); border-radius:20px;
+      padding:.3rem .85rem; font-size:.78rem; cursor:pointer; transition:all .15s;
+    }
+    .range-btn.active { background:var(--azul); color:#fff; border-color:var(--azul); }
+    .modal-body { flex:1; padding:1.2rem; overflow:auto; min-height:300px; }
+    .modal-loading { text-align:center; color:#aaa; padding:3rem 0; font-size:.9rem; }
+
+    /* FOOTER */
+    footer { text-align:center; padding:1.8rem 1rem; font-size:.73rem; color:#aaa; border-top:1px solid var(--borda); margin-top:.5rem; }
+    footer a { color:var(--azul); text-decoration:none; }
+    footer strong { color:#777; }
+
+    .btn-coletar {
+      background: #fff2; border: 1px solid #fff5; border-radius: 20px;
+      color: #fff; font-size: .78rem; font-weight: 600; padding: .3rem .95rem;
+      cursor: pointer; transition: background .15s; margin-left: .5rem;
+      display: flex; align-items: center; gap: .35rem; white-space: nowrap;
+    }
+    .btn-coletar:hover:not(:disabled) { background: #fff3; }
+    .btn-coletar:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-coletar .spin { display: inline-block; animation: spin 1s linear infinite; }
+    #coleta-toast {
+      position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 2000;
+      background: #1e1e2e; color: #fff; border-radius: 10px;
+      padding: .75rem 1.1rem; font-size: .82rem; max-width: 320px;
+      box-shadow: 0 4px 20px #0004; display: none;
+      border-left: 4px solid #2ecc71;
+    }
+    #coleta-toast.erro { border-color: #e74c3c; }
+
+    @media(max-width:600px) {
+      header { flex-wrap:wrap; }
+      .badge-status { margin-left:0; }
+      .result-details { grid-template-columns:1fr; }
+      .cotas-grid { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🌊</div>
+  <div>
+    <h1>Vale Taquari Tempo</h1>
+    <p>Monitoramento hidrológico — Bacia do Rio Taquari-Antas · Dados SGB/CPRM</p>
+  </div>
+  <div class="badge-status">
+    <div class="dot" id="dot-status"></div>
+    <span id="txt-status">Carregando...</span>
+  </div>
+  <button class="btn-coletar" id="btn-coletar" onclick="coletarAgora()" title="Buscar dados novos do SGB agora">
+    <span id="btn-coletar-icon">↻</span> Coletar
+  </button>
+</header>
+
+<main>
+
+  <!-- MÉTRICAS -->
+  <div class="metrics">
+    <div class="card">
+      <div class="label">Leituras coletadas</div>
+      <div class="value" id="m-leituras">—</div>
+      <div class="sub">registros do SGB/CPRM</div>
+    </div>
+    <div class="card">
+      <div class="label">Eventos históricos</div>
+      <div class="value" id="m-eventos">—</div>
+      <div class="sub">episódios de cheia</div>
+    </div>
+    <div class="card">
+      <div class="label">Razão histórica</div>
+      <div class="value" id="m-razao">—</div>
+      <div class="sub">mm chuva / m excesso de cota</div>
+    </div>
+    <div class="card">
+      <div class="label">Última coleta</div>
+      <div class="value" id="m-coleta" style="font-size:1rem;padding-top:.35rem">—</div>
+      <div class="sub">atualiza a cada ~15 min</div>
+    </div>
+  </div>
+
+  <!-- MAPA DO RIO -->
+  <div class="section">
+    <div class="section-header">
+      <span>🗺️</span> Fluxo do Rio Taquari-Antas — clique nas estações para ver o gráfico
+      <span id="mapa-ts" style="margin-left:auto;font-size:.72rem;font-weight:400;color:#aaa"></span>
+    </div>
+    <div class="section-body" style="padding:.8rem;display:flex;justify-content:center">
+      <svg id="mapa-rio" viewBox="0 0 580 490" style="width:100%;max-width:640px;display:block">
+        <defs>
+          <filter id="f-sombra">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0002"/>
+          </filter>
+          <filter id="f-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="4" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <!-- Fundo -->
+        <rect width="580" height="490" rx="10" fill="#e8f4e8"/>
+        <!-- Colinas decorativas -->
+        <ellipse cx="80"  cy="90"  rx="90" ry="38" fill="#c8dfc8" opacity=".55"/>
+        <ellipse cx="460" cy="70"  rx="80" ry="32" fill="#c8dfc8" opacity=".55"/>
+        <ellipse cx="430" cy="230" rx="70" ry="28" fill="#c8dfc8" opacity=".45"/>
+        <ellipse cx="70"  cy="350" rx="60" ry="25" fill="#c8dfc8" opacity=".4"/>
+        <ellipse cx="490" cy="400" rx="65" ry="25" fill="#c8dfc8" opacity=".4"/>
+
+        <!-- ══ MARGENS (borda do rio — camada inferior) ══ -->
+        <path id="seg-st-muc-borda"  d="M 190,62  Q 162,128 205,190" fill="none" stroke="#7bb8d0" stroke-width="24" stroke-linecap="round"/>
+        <path id="seg-muc-enc-borda" d="M 205,190 Q 228,252 182,315" fill="none" stroke="#7bb8d0" stroke-width="24" stroke-linecap="round"/>
+        <path id="seg-enc-str-borda" d="M 182,315 Q 158,370 220,425" fill="none" stroke="#7bb8d0" stroke-width="24" stroke-linecap="round"/>
+        <path id="seg-bf-str-borda"  d="M 400,315 Q 328,378 220,425" fill="none" stroke="#7bb8d0" stroke-width="20" stroke-linecap="round"/>
+
+        <!-- ══ ÁGUA (corpo colorido por status) ══ -->
+        <path id="seg-st-muc"  d="M 190,62  Q 162,128 205,190" fill="none" stroke="#29b6f6" stroke-width="15" stroke-linecap="round"/>
+        <path id="seg-muc-enc" d="M 205,190 Q 228,252 182,315" fill="none" stroke="#29b6f6" stroke-width="15" stroke-linecap="round"/>
+        <path id="seg-enc-str" d="M 182,315 Q 158,370 220,425" fill="none" stroke="#29b6f6" stroke-width="15" stroke-linecap="round"/>
+        <path id="seg-bf-str"  d="M 400,315 Q 328,378 220,425" fill="none" stroke="#29b6f6" stroke-width="12" stroke-linecap="round"/>
+
+        <!-- ══ FLUXO ANIMADO (sobreposição branca semitransparente) ══ -->
+        <path class="fluxo-anim" d="M 190,62  Q 162,128 205,190" fill="none" stroke="#ffffffaa" stroke-width="5" stroke-dasharray="16 13" stroke-linecap="round">
+          <animate attributeName="stroke-dashoffset" from="0" to="-29" dur="1.1s" repeatCount="indefinite"/>
+        </path>
+        <path class="fluxo-anim" d="M 205,190 Q 228,252 182,315" fill="none" stroke="#ffffffaa" stroke-width="5" stroke-dasharray="16 13" stroke-linecap="round">
+          <animate attributeName="stroke-dashoffset" from="0" to="-29" dur="1.3s" repeatCount="indefinite"/>
+        </path>
+        <path class="fluxo-anim" d="M 182,315 Q 158,370 220,425" fill="none" stroke="#ffffffaa" stroke-width="5" stroke-dasharray="16 13" stroke-linecap="round">
+          <animate attributeName="stroke-dashoffset" from="0" to="-29" dur="1.5s" repeatCount="indefinite"/>
+        </path>
+        <path class="fluxo-anim" d="M 400,315 Q 328,378 220,425" fill="none" stroke="#ffffffaa" stroke-width="4" stroke-dasharray="13 11" stroke-linecap="round">
+          <animate attributeName="stroke-dashoffset" from="0" to="-24" dur="1.7s" repeatCount="indefinite"/>
+        </path>
+
+        <!-- ══ SANTA TEREZA ══ -->
+        <g id="est-sta-tereza" style="cursor:pointer" onclick="abrirGrafico('taquari_32_cota','cota','Santa Tereza')">
+          <circle id="pulso-sta-tereza" cx="190" cy="62" r="28" fill="none" stroke="#2980b9" stroke-width="2" opacity="0"/>
+          <circle cx="190" cy="62" r="22" fill="white" id="anel-sta-tereza" stroke="#2980b9" stroke-width="3" filter="url(#f-sombra)"/>
+          <circle cx="190" cy="62" r="15" fill="#ddeeff"/>
+          <text x="190" y="58"  text-anchor="middle" font-size="8.5" font-weight="800" fill="#2980b9">SANTA</text>
+          <text x="190" y="68"  text-anchor="middle" font-size="8.5" font-weight="800" fill="#2980b9">TEREZA</text>
+          <text x="190" y="38"  text-anchor="middle" font-size="11"  font-weight="700" fill="#1a1a2e">Santa Tereza</text>
+          <text id="val-sta-tereza"  x="190" y="93"  text-anchor="middle" font-size="11" font-weight="700" fill="#333">— m</text>
+          <text id="tend-sta-tereza" x="190" y="108" text-anchor="middle" font-size="9.5" fill="#666">—</text>
+        </g>
+
+        <!-- ══ MUÇUM ══ -->
+        <g id="est-mucum" style="cursor:pointer" onclick="abrirGrafico('taquari_3_cota','cota','Muçum')">
+          <circle id="pulso-mucum" cx="205" cy="190" r="28" fill="none" stroke="#8e44ad" stroke-width="2" opacity="0"/>
+          <circle cx="205" cy="190" r="22" fill="white" id="anel-mucum" stroke="#8e44ad" stroke-width="3" filter="url(#f-sombra)"/>
+          <circle cx="205" cy="190" r="15" fill="#f3e5fb"/>
+          <text x="205" y="186" text-anchor="middle" font-size="9" font-weight="800" fill="#8e44ad">MUÇUM</text>
+          <text x="205" y="196" text-anchor="middle" font-size="8" font-weight="600" fill="#8e44ad">▼</text>
+          <text x="205" y="166" text-anchor="middle" font-size="11" font-weight="700" fill="#1a1a2e">Muçum</text>
+          <text id="val-mucum"  x="205" y="221" text-anchor="middle" font-size="11" font-weight="700" fill="#333">— m</text>
+          <text id="tend-mucum" x="205" y="236" text-anchor="middle" font-size="9.5" fill="#666">—</text>
+        </g>
+
+        <!-- ══ ENCANTADO ══ -->
+        <g id="est-encantado" style="cursor:pointer" onclick="abrirGrafico('taquari_2_cota','cota','Encantado')">
+          <circle id="pulso-encantado" cx="182" cy="315" r="28" fill="none" stroke="#16a085" stroke-width="2" opacity="0"/>
+          <circle cx="182" cy="315" r="22" fill="white" id="anel-encantado" stroke="#16a085" stroke-width="3" filter="url(#f-sombra)"/>
+          <circle cx="182" cy="315" r="15" fill="#d5f5f0"/>
+          <text x="182" y="311" text-anchor="middle" font-size="8.5" font-weight="800" fill="#16a085">ENCAN</text>
+          <text x="182" y="321" text-anchor="middle" font-size="8.5" font-weight="800" fill="#16a085">TADO</text>
+          <text x="182" y="291" text-anchor="middle" font-size="11" font-weight="700" fill="#1a1a2e">Encantado</text>
+          <text id="val-encantado"  x="182" y="346" text-anchor="middle" font-size="11" font-weight="700" fill="#333">— m</text>
+          <text id="tend-encantado" x="182" y="361" text-anchor="middle" font-size="9.5" fill="#666">—</text>
+        </g>
+
+        <!-- ══ BARRA DO FÃO (tributário) ══ -->
+        <g id="est-barra-fao" style="cursor:pointer" onclick="abrirGrafico('taquari_33_cota','cota','Barra do Fão')">
+          <circle id="pulso-barra-fao" cx="400" cy="315" r="24" fill="none" stroke="#27ae60" stroke-width="2" opacity="0"/>
+          <circle cx="400" cy="315" r="19" fill="white" id="anel-barra-fao" stroke="#27ae60" stroke-width="3" filter="url(#f-sombra)"/>
+          <circle cx="400" cy="315" r="13" fill="#d5f5e3"/>
+          <text x="400" y="311" text-anchor="middle" font-size="8" font-weight="800" fill="#27ae60">BARRA</text>
+          <text x="400" y="320" text-anchor="middle" font-size="8" font-weight="800" fill="#27ae60">DO FÃO</text>
+          <text x="400" y="292" text-anchor="middle" font-size="11" font-weight="700" fill="#1a1a2e">Barra do Fão</text>
+          <text id="val-barra-fao"  x="400" y="344" text-anchor="middle" font-size="11" font-weight="700" fill="#333">— m</text>
+          <text id="tend-barra-fao" x="400" y="358" text-anchor="middle" font-size="9.5" fill="#666">—</text>
+        </g>
+
+        <!-- ══ ESTRELA / LAJEADO ══ -->
+        <g id="est-estrela" style="cursor:pointer" onclick="abrirGrafico('taquari_1_cota','cota','Estrela/Lajeado')">
+          <circle id="pulso-estrela" cx="220" cy="425" r="32" fill="none" stroke="#1a6faf" stroke-width="2" opacity="0"/>
+          <circle cx="220" cy="425" r="26" fill="white" id="anel-estrela" stroke="#1a6faf" stroke-width="3" filter="url(#f-sombra)"/>
+          <circle cx="220" cy="425" r="18" fill="#d6eaf8"/>
+          <text x="220" y="421" text-anchor="middle" font-size="8.5" font-weight="800" fill="#1a6faf">ESTRELA</text>
+          <text x="220" y="431" text-anchor="middle" font-size="8.5" font-weight="800" fill="#1a6faf">LAJEADO</text>
+          <text id="val-estrela"  x="220" y="460" text-anchor="middle" font-size="12" font-weight="800" fill="#333">— m</text>
+          <text id="tend-estrela" x="220" y="476" text-anchor="middle" font-size="9.5" fill="#666">—</text>
+        </g>
+
+        <!-- ══ LEGENDA ══ -->
+        <g transform="translate(400,30)">
+          <rect width="162" height="90" rx="7" fill="white" fill-opacity=".9" stroke="#ccc" stroke-width="1"/>
+          <text x="10" y="18" font-size="9.5" font-weight="700" fill="#333">Situação</text>
+          <circle cx="20" cy="33" r="7" fill="#29b6f6"/>
+          <text x="34" y="37" font-size="9" fill="#333">Normal</text>
+          <circle cx="20" cy="53" r="7" fill="#ffb74d"/>
+          <text x="34" y="57" font-size="9" fill="#333">Atenção</text>
+          <circle cx="20" cy="73" r="7" fill="#ef5350"/>
+          <text x="34" y="77" font-size="9" fill="#333">Em cheia</text>
+        </g>
+
+        <!-- Seta Norte -->
+        <g transform="translate(536,38)">
+          <circle r="16" fill="white" stroke="#bbb" stroke-width="1"/>
+          <polygon points="0,-10 3,-2 0,1 -3,-2" fill="#1a1a2e"/>
+          <text y="11" text-anchor="middle" font-size="8" fill="#1a1a2e" font-weight="700">N</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- COTAS ATUAIS -->
+  <div class="section">
+    <div class="section-header">
+      <span>📏</span> Cotas atuais (metros) — clique para ver gráfico histórico
+    </div>
+    <div class="section-body">
+      <div class="cotas-grid" id="cotas-grid">
+        <p style="color:#aaa;font-size:.84rem">Carregando...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHUVA 24H -->
+  <div class="section">
+    <div class="section-header">
+      <span>🌧️</span> Chuva — últimas 24h (mm) — clique para ver gráfico histórico
+    </div>
+    <div class="section-body">
+      <div class="chuva-grid" id="chuva-grid">
+        <p style="color:#aaa;font-size:.84rem">Carregando...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIMULADOR -->
+  <div class="section">
+    <div class="section-header">
+      <span>🔮</span> Simulador de projeção de cheia — Lajeado/Estrela
+    </div>
+    <div class="section-body">
+      <p style="font-size:.83rem;color:#555;margin-bottom:1.1rem">
+        Ajuste a chuva esperada em cada estação de cabeceira e calcule a cota projetada em Lajeado.
+        A projeção usa a razão histórica calibrada com episódios anteriores.
+      </p>
+      <div class="sim-grid" id="sim-sliders"></div>
+      <button class="btn-projetar" id="btn-proj" onclick="projetar()">Calcular projeção</button>
+      <div id="resultado"></div>
+    </div>
+  </div>
+
+  <!-- EVENTOS HISTÓRICOS -->
+  <div class="section">
+    <div class="section-header">
+      <span>📋</span> Episódios de cheia registrados
+      <span style="margin-left:auto;font-size:.73rem;font-weight:400;color:#888">
+        Um episódio é registrado quando chove acima do limiar e depois o nível volta a baixar — é isso que calibra a projeção
+      </span>
+    </div>
+    <div class="section-body" id="eventos-body">
+      <p style="color:#aaa;font-size:.84rem">Carregando...</p>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  Dados: <strong>SGB/CPRM</strong> — Sistema de Alerta de Cheias (SACE) &nbsp;|&nbsp;
+  Código-fonte: <a href="https://github.com/lucasleandrodemoura/hidrosite" target="_blank">github.com/lucasleandrodemoura/hidrosite</a>
+  &nbsp;|&nbsp;
+  <a href="https://github.com/lucasleandrodemoura/hidrosite/blob/main/LICENSE" target="_blank">Vale Taquari Tempo Open License v1.0</a>
+  — uso não-comercial, melhorias devem ser compartilhadas &nbsp;|&nbsp;
+  ⚠️ Projeções são estimativas — consulte a <strong>Defesa Civil do RS</strong> em situações de risco
+</footer>
+
+<!-- MODAL DE GRÁFICO -->
+<div class="modal-overlay" id="modal-overlay" onclick="fecharModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">—</span>
+      <button class="modal-close" onclick="fecharModal()">✕</button>
+    </div>
+    <div class="modal-toolbar">
+      <span style="font-size:.78rem;color:#888">Período:</span>
+      <button class="range-btn active" onclick="mudarPeriodo(this,6)">6h</button>
+      <button class="range-btn" onclick="mudarPeriodo(this,24)">24h</button>
+      <button class="range-btn" onclick="mudarPeriodo(this,72)">3 dias</button>
+      <button class="range-btn" onclick="mudarPeriodo(this,168)">7 dias</button>
+      <button class="range-btn" onclick="mudarPeriodo(this,720)">30 dias</button>
+      <button class="range-btn" onclick="mudarPeriodo(this,0)">Todo histórico</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-loading" id="modal-loading">Carregando dados...</div>
+      <canvas id="modal-chart" style="display:none"></canvas>
+    </div>
+  </div>
+</div>
+
+<div id="coleta-toast"></div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const API = '';
+
+const CFG_COTA = {
+  taquari_1_cota:  { nome:'Estrela/Lajeado', atencao:15.00, inundacao:19.00, cor:'#1a6faf', corAtencao:'#e07b00', corCheia:'#c0392b' },
+  taquari_2_cota:  { nome:'Encantado',       atencao: 9.00, inundacao:12.00, cor:'#16a085', corAtencao:'#e07b00', corCheia:'#c0392b' },
+  taquari_3_cota:  { nome:'Muçum',           atencao: 9.00, inundacao:18.00, cor:'#8e44ad', corAtencao:'#e07b00', corCheia:'#c0392b' },
+  taquari_32_cota: { nome:'Santa Tereza',    atencao: 9.00, inundacao:15.00, cor:'#2980b9', corAtencao:'#e07b00', corCheia:'#c0392b' },
+  taquari_33_cota: { nome:'Barra do Fão',    atencao: 6.00, inundacao:10.00, cor:'#27ae60', corAtencao:'#e07b00', corCheia:'#c0392b' },
+};
+const CFG_CHUVA = {
+  taquari_9_chuva:  'Vacaria',
+  taquari_12_chuva: 'Ibiraiaras',
+  taquari_31_chuva: 'Guaporé',
+  taquari_54_chuva: 'Passo Carreiro',
+  taquari_32_chuva: 'Santa Tereza',
+  taquari_55_chuva: 'Linha Colombo',
+  taquari_33_chuva: 'Barra do Fão',
+};
+
+const COTA_CRITICA_LAJEADO = 25.0;
+const ORDEM_COTAS = ['taquari_1_cota','taquari_2_cota','taquari_3_cota','taquari_32_cota','taquari_33_cota'];
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let chartInstance = null;
+let modalEstacaoId = null;
+let modalTipo = null;
+let modalHoras = 6;
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+async function init() {
+  construirSliders();
+  await Promise.all([carregarStatus(), carregarStatusAtual(), carregarEventos()]);
+}
+
+// ── STATUS ────────────────────────────────────────────────────────────────────
+async function carregarStatus() {
+  try {
+    const [d, r] = await Promise.all([api('/'), api('/razao-historica')]);
+    document.getElementById('m-leituras').textContent = d.leituras_total?.toLocaleString('pt-BR') ?? '—';
+    document.getElementById('m-eventos').textContent  = d.eventos_fechados ?? '0';
+    const ts = d.ultima_coleta ? new Date(d.ultima_coleta).toLocaleString('pt-BR') : '—';
+    document.getElementById('m-coleta').textContent   = ts;
+    const razao = r.razao_historica?.razao_media;
+    document.getElementById('m-razao').textContent    = razao ? razao.toFixed(1) : '—';
+    document.getElementById('dot-status').style.background = '#2ecc71';
+    document.getElementById('txt-status').textContent = 'Online';
+  } catch {
+    document.getElementById('dot-status').style.background = '#e74c3c';
+    document.getElementById('txt-status').textContent = 'Offline';
+  }
+}
+
+// ── MAPA ANIMADO DO RIO ───────────────────────────────────────────────────────
+const MAPA_EST = {
+  'taquari_32_cota': { seg: 'st-muc',  anel: 'anel-sta-tereza', pulso: 'pulso-sta-tereza', val: 'val-sta-tereza',  tend: 'tend-sta-tereza' },
+  'taquari_3_cota':  { seg: 'muc-enc', anel: 'anel-mucum',      pulso: 'pulso-mucum',      val: 'val-mucum',       tend: 'tend-mucum'      },
+  'taquari_2_cota':  { seg: 'enc-str', anel: 'anel-encantado',  pulso: 'pulso-encantado',  val: 'val-encantado',   tend: 'tend-encantado'  },
+  'taquari_33_cota': { seg: 'bf-str',  anel: 'anel-barra-fao',  pulso: 'pulso-barra-fao',  val: 'val-barra-fao',   tend: 'tend-barra-fao'  },
+  'taquari_1_cota':  { seg: null,      anel: 'anel-estrela',    pulso: 'pulso-estrela',    val: 'val-estrela',     tend: 'tend-estrela'    },
+};
+
+function atualizarMapaRio(cotas) {
+  Object.entries(MAPA_EST).forEach(([id, m]) => {
+    const cfg  = CFG_COTA[id];
+    const dado = cotas[id];
+    const anel  = document.getElementById(m.anel);
+    const pulso = document.getElementById(m.pulso);
+    const valEl = document.getElementById(m.val);
+    const tendEl= document.getElementById(m.tend);
+    if (!anel) return;
+
+    let cor, corAnel, label;
+    if (!dado) {
+      cor = '#90a4ae'; corAnel = '#90a4ae'; label = '—';
+    } else {
+      const v = dado.valor;
+      if (v >= cfg.inundacao) {
+        cor = '#ef5350'; corAnel = '#c62828'; label = v.toFixed(2)+'m';
+      } else if (v >= cfg.atencao) {
+        cor = '#ffb74d'; corAnel = '#ef6c00'; label = v.toFixed(2)+'m';
+      } else {
+        cor = '#29b6f6'; corAnel = '#0277bd'; label = v.toFixed(2)+'m';
+      }
+    }
+
+    anel.setAttribute('stroke', corAnel);
+
+    // Colorir segmento de rio upstream desta estação
+    if (m.seg) {
+      const seg = document.getElementById('seg-'+m.seg);
+      if (seg) seg.setAttribute('stroke', cor);
+    }
+
+    // Pulsar se em cheia
+    if (dado && dado.valor >= cfg.inundacao) {
+      pulso.setAttribute('stroke', corAnel);
+      pulso.setAttribute('opacity', '0.5');
+      pulso.style.animation = 'none';
+      // força reflow para reiniciar animação CSS
+      void pulso.getBoundingClientRect();
+      pulso.style.animation = '';
+    } else {
+      pulso.setAttribute('opacity', '0');
+    }
+
+    if (valEl)  valEl.textContent  = label;
+    if (tendEl && dado) {
+      const td = dado.tendencia;
+      const taxa = dado.taxa_hora_m != null ? (dado.taxa_hora_m * 100).toFixed(1) : '—';
+      const seta = td === 'subindo' ? '↑' : td === 'baixando' ? '↓' : '→';
+      const cor2 = td === 'subindo' ? '#ef5350' : td === 'baixando' ? '#26a69a' : '#888';
+      tendEl.setAttribute('fill', cor2);
+      tendEl.textContent = `${seta} ${taxa} cm/h`;
+    }
+  });
+
+  // Atualizar timestamp do mapa
+  const ts = document.getElementById('mapa-ts');
+  if (ts) ts.textContent = new Date().toLocaleTimeString('pt-BR');
+}
+
+// ── STATUS ATUAL (cotas + chuva) ──────────────────────────────────────────────
+async function carregarStatusAtual() {
+  try {
+    const d = await api('/status-atual');
+    renderCotas(d.cotas ?? {});
+    renderChuva(d.chuvas ?? {});
+    atualizarMapaRio(d.cotas ?? {});
+  } catch(e) {
+    document.getElementById('cotas-grid').innerHTML = '<p style="color:#c00;font-size:.84rem">Erro ao carregar cotas.</p>';
+    document.getElementById('chuva-grid').innerHTML = '<p style="color:#c00;font-size:.84rem">Erro ao carregar chuva.</p>';
+  }
+}
+
+function renderCotas(cotas) {
+  const el = document.getElementById('cotas-grid');
+  el.innerHTML = '';
+
+  ORDEM_COTAS.forEach(id => {
+    const cfg  = CFG_COTA[id];
+    const dado = cotas[id];
+    if (!dado) {
+      el.innerHTML += `<div class="cota-card normal" onclick="abrirGrafico('${id}','cota','${cfg.nome}')">
+        <div class="cc-nome">${cfg.nome}</div>
+        <div class="cc-valor" style="color:#ccc">—</div>
+        <div class="cc-sub">Sem dados recentes</div>
+        <div class="cc-hint">Clique para ver histórico ↗</div>
+      </div>`;
+      return;
+    }
+
+    const cota  = dado.valor;
+    const inund = cfg.inundacao;
+    const aten  = cfg.atencao;
+    const max   = inund * 1.6;
+    const pct        = Math.min(100, (cota  / max) * 100).toFixed(1);
+    const pctInund   = Math.min(100, (inund / max) * 100).toFixed(1);
+    const pctAtencao = Math.min(100, (aten  / max) * 100).toFixed(1);
+
+    let classe = 'normal', badge = 'Normal', badgeClass = 'badge-normal', cor = cfg.cor;
+    if (dado.em_cheia) {
+      classe = 'cheia';   badge = 'EM CHEIA'; badgeClass = 'badge-cheia';   cor = cfg.corCheia;
+    } else if (dado.em_atencao) {
+      classe = 'atencao'; badge = 'ATENÇÃO';  badgeClass = 'badge-atencao'; cor = cfg.corAtencao;
+    }
+
+    const ts = dado.timestamp ? new Date(dado.timestamp).toLocaleString('pt-BR') : '—';
+    let sub;
+    if (cota >= inund) {
+      sub = `<span style="color:${cfg.corCheia};font-weight:700">+${(cota-inund).toFixed(2)}m acima da inundação</span>`;
+    } else if (cota >= aten) {
+      sub = `<span style="color:${cfg.corAtencao}">${(inund-cota).toFixed(2)}m abaixo da inundação</span>`;
+    } else {
+      sub = `<span style="color:#888">${(inund-cota).toFixed(2)}m abaixo da inundação</span>`;
+    }
+
+    el.innerHTML += `
+      <div class="cota-card ${classe}" onclick="abrirGrafico('${id}','cota','${cfg.nome}')">
+        <div class="cc-badge ${badgeClass}">${badge}</div>
+        <div class="cc-nome">${cfg.nome}</div>
+        <div class="cc-valor" style="color:${cor}">${cota.toFixed(2)} <span style="font-size:1rem;font-weight:400">m</span></div>
+        <div class="cc-sub">${sub}</div>
+        <div class="cc-bar" style="position:relative">
+          <div class="cc-fill" style="width:${pct}%;background:${cor}"></div>
+          <div style="position:absolute;top:-2px;left:${pctInund}%;width:2px;height:calc(100%+4px);background:#c0392b88"></div>
+          <div style="position:absolute;top:-2px;left:${pctAtencao}%;width:2px;height:calc(100%+4px);background:#e07b0077"></div>
+        </div>
+        <div class="cc-ref">
+          <span>0</span>
+          <span style="color:#e07b00">⚠ ${aten}m</span>
+          <span style="color:#c0392b">🚨 ${inund}m</span>
+          <span>${max.toFixed(0)}m</span>
+        </div>
+        <div style="margin-top:.6rem;display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:.7rem;color:#aaa">${ts}</span>
+          ${tendenciaHTML(dado)}
+        </div>
+        <div class="cc-hint">Clique para ver histórico ↗</div>
+      </div>`;
+  });
+}
+
+function renderChuva(chuvas) {
+  const el = document.getElementById('chuva-grid');
+  el.innerHTML = '';
+
+  Object.entries(CFG_CHUVA).forEach(([id, nome]) => {
+    const dado   = chuvas[id];
+    const acum   = dado?.acumulado_24h ?? 0;
+    const ultima = dado?.valor ?? 0;
+    const cor = acum > 80 ? '#c0392b' : acum > 40 ? '#e07b00' : acum > 10 ? var_azul() : '#7fb3d3';
+
+    el.innerHTML += `
+      <div class="chuva-card" onclick="abrirGrafico('${id}','chuva','${nome}')">
+        <div>
+          <div class="cn">${nome}</div>
+          <div class="cs">${ultima > 0 ? `${ultima} mm agora` : 'Sem chuva no momento'}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="cv" style="color:${cor}">${acum.toFixed(1)}</div>
+          <div class="cs">mm / 24h</div>
+        </div>
+      </div>`;
+  });
+}
+function var_azul() { return '#2a8fd4'; }
+
+function tendenciaHTML(dado) {
+  const t    = dado.tendencia;
+  const taxa = dado.taxa_hora_m;
+  if (!t || t === 'sem_dados') return '';
+
+  const taxaAbs = Math.abs(taxa ?? 0);
+  const taxaTxt = taxaAbs > 0
+    ? `${taxaAbs >= 0.01 ? (taxaAbs * 100).toFixed(0) + ' cm/h' : '< 1 cm/h'}`
+    : '';
+
+  if (t === 'subindo') {
+    const intensidade = taxaAbs >= 0.20 ? 'rápido' : taxaAbs >= 0.05 ? '' : 'lento';
+    return `<span style="display:inline-flex;align-items:center;gap:.3rem;
+              background:#fff0f0;border:1px solid #f5b7b1;border-radius:20px;
+              padding:.18rem .6rem;font-size:.72rem;font-weight:700;color:#c0392b">
+              ↑ Subindo${intensidade ? ' ('+intensidade+')' : ''} · ${taxaTxt}
+            </span>`;
+  }
+  if (t === 'baixando') {
+    const intensidade = taxaAbs >= 0.20 ? 'rápido' : taxaAbs >= 0.05 ? '' : 'lento';
+    return `<span style="display:inline-flex;align-items:center;gap:.3rem;
+              background:#f0faf4;border:1px solid #a9dfbf;border-radius:20px;
+              padding:.18rem .6rem;font-size:.72rem;font-weight:700;color:#0e8a4a">
+              ↓ Baixando${intensidade ? ' ('+intensidade+')' : ''} · ${taxaTxt}
+            </span>`;
+  }
+  return `<span style="display:inline-flex;align-items:center;gap:.3rem;
+            background:#f8f9fa;border:1px solid #dee2e6;border-radius:20px;
+            padding:.18rem .6rem;font-size:.72rem;font-weight:600;color:#666">
+            → Estável
+          </span>`;
+}
+
+// ── SLIDERS DO SIMULADOR ──────────────────────────────────────────────────────
+function construirSliders() {
+  const el = document.getElementById('sim-sliders');
+  el.innerHTML = '';
+  Object.entries(CFG_CHUVA).forEach(([id, nome]) => {
+    el.innerHTML += `
+      <div class="sim-field">
+        <label for="sl_${id}">${nome}</label>
+        <input type="range" id="sl_${id}" min="0" max="300" value="50" step="5"
+               oninput="document.getElementById('v_${id}').textContent=this.value">
+        <div class="vd"><span>0</span><span class="vm"><span id="v_${id}">50</span> mm</span><span>300</span></div>
+      </div>`;
+  });
+}
+
+// ── PROJEÇÃO ──────────────────────────────────────────────────────────────────
+async function projetar() {
+  const btn = document.getElementById('btn-proj');
+  btn.disabled = true; btn.textContent = 'Calculando...';
+
+  const chuva = {};
+  Object.keys(CFG_CHUVA).forEach(id => { chuva[id] = +document.getElementById('sl_'+id).value; });
+
+  const el = document.getElementById('resultado');
+  el.style.display = 'block';
+
+  try {
+    const r = await api('/projetar', { method:'POST', body:JSON.stringify({chuva_por_estacao:chuva}) });
+
+    if (r.status === 'sem_dados') {
+      el.innerHTML = `<div class="aviso-sem-dados">
+        ⚠️ <strong>Calibração pendente.</strong> O sistema ainda não possui episódios de cheia fechados.
+        Continue coletando dados — após 1–2 eventos completos a projeção ficará disponível.<br>
+        <em style="font-size:.78rem">${r.mensagem}</em>
+      </div>`;
+    } else {
+      const cota = r.projecao.cota_projetada_m;
+      const exc  = r.projecao.excesso_sobre_inundacao;
+      const h    = r.projecao.horas_ate_pico;
+      const ic   = r.projecao.intervalo_confianca;
+      const cal  = r.calibracao;
+      const def  = cal.defasagem_detalhada ?? {};
+
+      let cls='normal', emo='✅', txt='Sem inundação esperada';
+      if (cota>=COTA_CRITICA_LAJEADO)    { cls='critico'; emo='🚨'; txt='Nível crítico'; }
+      else if (cota>=CFG_COTA['taquari_1_cota'].inundacao) { cls='atencao'; emo='⚠️'; txt='Acima da cota de inundação'; }
+
+      const corRes = cls==='normal'?'var(--verde)':cls==='atencao'?'var(--laranja)':'var(--alerta)';
+
+      el.innerHTML = `<div class="result-box ${cls}">
+        <div class="result-label">${emo} ${txt}</div>
+        <div class="result-cota" style="color:${corRes}">${cota} m <span style="font-size:1rem;font-weight:400">Lajeado</span></div>
+        <div class="result-details">
+          <div><span>Excesso sobre inundação</span><br><strong>${exc} m</strong></div>
+          <div><span>Horas até o pico</span><br><strong>${h ? '~'+h+'h' : 'N/D'}</strong></div>
+          <div><span>Chuva média</span><br><strong>${r.entrada.chuva_media_mm} mm</strong></div>
+          <div><span>Confiabilidade</span><br><strong>${cal.confiabilidade}</strong></div>
+          <div><span>Eventos calibrados</span><br><strong>${cal.n_eventos_historicos}</strong></div>
+          <div><span>Razão usada</span><br><strong>${cal.razao_utilizada} mm/m</strong></div>
+        </div>
+        ${def.cabeceira_mucum_h ? `<div style="margin-top:.7rem;padding-top:.6rem;border-top:1px solid #ddd;font-size:.73rem;color:#888">
+          Defasagem média: Cabeceira→Muçum ${def.cabeceira_mucum_h}h &nbsp;·&nbsp;
+          Muçum→Encantado ${def.mucum_encantado_h}h &nbsp;·&nbsp;
+          Encantado→Lajeado ${def.encantado_lajeado_h}h
+        </div>` : ''}
+        ${ic ? `<div style="margin-top:.4rem;font-size:.73rem;color:#888">
+          Intervalo de confiança: ${ic.cota_minima}–${ic.cota_maxima} m (±1σ)
+        </div>` : ''}
+      </div>`;
+    }
+  } catch(e) {
+    el.innerHTML = `<p style="color:#c00;margin-top:.8rem;font-size:.84rem">Erro: ${e.message}</p>`;
+  }
+  btn.disabled = false; btn.textContent = 'Calcular projeção';
+}
+
+// ── EVENTOS ───────────────────────────────────────────────────────────────────
+async function carregarEventos() {
+  try {
+    const d = await api('/eventos?status=fechado&limite=10');
+    const el = document.getElementById('eventos-body');
+    if (!d.eventos?.length) {
+      el.innerHTML = `<p style="color:#aaa;font-size:.84rem">Nenhum episódio fechado ainda. O sistema registrará automaticamente ao detectar chuva acima do limiar seguida de recuo de nível.</p>`;
+      return;
+    }
+    let html = `<table class="ev-table"><thead><tr>
+      <th>Início</th><th>Chuva média</th><th>Cota máx. Lajeado</th><th>Razão</th><th>Defasagem total</th>
+    </tr></thead><tbody>`;
+    d.eventos.forEach(e => {
+      const ini   = e.inicio_chuva ? new Date(e.inicio_chuva).toLocaleDateString('pt-BR') : '—';
+      const chuva = e.chuva_media_cabeceira?.toFixed(1) ?? '—';
+      const cota  = e.cota_maxima_lajeado?.toFixed(2)  ?? '—';
+      const razao = e.razao_calculada?.toFixed(2)       ?? '—';
+      const lag   = (e.defasagem_cabeceira_mucum_h && e.defasagem_mucum_encantado_h && e.defasagem_encantado_lajeado_h)
+        ? (e.defasagem_cabeceira_mucum_h + e.defasagem_mucum_encantado_h + e.defasagem_encantado_lajeado_h).toFixed(0)+'h'
+        : '—';
+      html += `<tr><td>${ini}</td><td>${chuva} mm</td><td>${cota} m</td><td>${razao}</td><td>${lag}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch {
+    document.getElementById('eventos-body').innerHTML = '<p style="color:#c00;font-size:.84rem">Erro ao carregar eventos.</p>';
+  }
+}
+
+// ── MODAL / GRÁFICO ───────────────────────────────────────────────────────────
+function abrirGrafico(estacaoId, tipo, nome) {
+  modalEstacaoId = estacaoId;
+  modalTipo      = tipo;
+  modalHoras     = 24;
+
+  document.getElementById('modal-title').textContent = (tipo === 'cota' ? '📏 Cota — ' : '🌧️ Chuva — ') + nome;
+  document.getElementById('modal-overlay').classList.add('open');
+
+  // Botão 24h ativo por padrão
+  document.querySelectorAll('.range-btn').forEach((b,i) => b.classList.toggle('active', i===1));
+
+  carregarGrafico();
+}
+
+function fecharModal(e) {
+  if (e && e.target !== document.getElementById('modal-overlay')) return;
+  document.getElementById('modal-overlay').classList.remove('open');
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+}
+
+function mudarPeriodo(btn, horas) {
+  document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  modalHoras = horas;
+  carregarGrafico();
+}
+
+async function carregarGrafico() {
+  document.getElementById('modal-loading').style.display = 'block';
+  document.getElementById('modal-chart').style.display  = 'none';
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+  try {
+    const limiteGrafico = modalHoras === 0 ? 50000 : 5000;
+    const d = await api(`/leituras?estacao=${modalEstacaoId}&tipo=${modalTipo}&horas=${modalHoras}&limite=${limiteGrafico}`);
+    const serie = d.estacoes?.[modalEstacaoId]?.series ?? [];
+
+    if (!serie.length) {
+      document.getElementById('modal-loading').textContent = 'Sem dados neste período.';
+      return;
+    }
+
+    // Ordena cronologicamente (API retorna decrescente)
+    serie.reverse();
+
+    // Atualiza subtítulo com range real dos dados
+    const dtInicio = new Date(serie[0].ts).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    const dtFim    = new Date(serie[serie.length-1].ts).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    document.getElementById('modal-title').textContent =
+      (modalTipo === 'cota' ? '📏 Cota — ' : '🌧️ Chuva — ') +
+      (CFG_COTA[modalEstacaoId]?.nome ?? CFG_CHUVA[modalEstacaoId] ?? modalEstacaoId) +
+      ` · ${serie.length} pontos · ${dtInicio} → ${dtFim}`;
+
+    const labels = serie.map(r => new Date(r.ts));
+    const values = serie.map(r => parseFloat(r.valor));
+
+    const cfg = CFG_COTA[modalEstacaoId];
+    const isCota = modalTipo === 'cota';
+    const corBase = isCota ? (cfg ? cfg.cor : '#1a6faf') : '#2a8fd4';
+
+    document.getElementById('modal-loading').style.display = 'none';
+    const canvas = document.getElementById('modal-chart');
+    canvas.style.display = 'block';
+
+    let datasets, chartType, chartOptions;
+
+    if (isCota) {
+      // ── COTA: gráfico de linha com área preenchida ──────────────────────────
+      datasets = [{
+        label: 'Cota (m)',
+        data: labels.map((t,i) => ({x:t, y:values[i]})),
+        borderColor: corBase,
+        backgroundColor: corBase + '22',
+        fill: true,
+        tension: .3,
+        pointRadius: serie.length > 200 ? 0 : 2,
+        pointHoverRadius: 4,
+        borderWidth: 2,
+      }];
+
+      // Linha de atenção
+      if (cfg?.atencao) datasets.push({
+        label: `Atenção (${cfg.atencao}m)`,
+        data: labels.map(t => ({x:t, y:cfg.atencao})),
+        borderColor: '#e07b00',
+        borderDash: [4,4],
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: false,
+        type: 'line',
+      });
+
+      // Linha de inundação
+      if (cfg?.inundacao) datasets.push({
+        label: `Inundação (${cfg.inundacao}m)`,
+        data: labels.map(t => ({x:t, y:cfg.inundacao})),
+        borderColor: '#c0392b',
+        borderDash: [6,4],
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: false,
+        type: 'line',
+      });
+
+      chartType = 'line';
+      chartOptions = {
+        scales: {
+          x: { type:'time', time:{ tooltipFormat:'dd/MM HH:mm', displayFormats:{ hour:'HH:mm', day:'dd/MM', month:'MMM/yy' } }, ticks:{ maxTicksLimit:10, font:{size:10} }, grid:{color:'#f0f0f0'} },
+          y: { title:{display:true,text:'Cota (m)',font:{size:11}}, ticks:{font:{size:10}}, grid:{color:'#f0f0f0'} }
+        }
+      };
+
+    } else {
+      // ── CHUVA: gráfico de barras verticais ─────────────────────────────────
+      // Agrupa por hora quando tem muitos pontos (>500) para evitar barras finas demais
+      let dadosGrafico;
+      if (serie.length > 500) {
+        const porHora = {};
+        serie.forEach(r => {
+          const dt  = new Date(r.ts);
+          const key = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), dt.getHours()).getTime();
+          porHora[key] = (porHora[key] ?? 0) + parseFloat(r.valor);
+        });
+        dadosGrafico = Object.entries(porHora)
+          .sort(([a],[b]) => a-b)
+          .map(([ts, v]) => ({x: new Date(+ts), y: Math.round(v*10)/10}));
+      } else {
+        dadosGrafico = labels.map((t,i) => ({x:t, y:values[i]}));
+      }
+
+      // Cor das barras: azul claro → azul escuro conforme intensidade
+      const maxVal = Math.max(...dadosGrafico.map(d => d.y), 1);
+      const bgColors = dadosGrafico.map(d => {
+        const pct = d.y / maxVal;
+        if (pct > .75) return '#1a6faf';
+        if (pct > .40) return '#2a8fd4';
+        return '#90caf9';
+      });
+
+      datasets = [{
+        label: serie.length > 500 ? 'Chuva por hora (mm)' : 'Chuva por leitura (mm)',
+        data: dadosGrafico,
+        backgroundColor: bgColors,
+        borderColor: bgColors.map(c => c === '#1a6faf' ? '#0d4f83' : c === '#2a8fd4' ? '#1a6faf' : '#64b5f6'),
+        borderWidth: 1,
+        borderRadius: 2,
+        borderSkipped: false,
+      }];
+
+      chartType = 'bar';
+      chartOptions = {
+        scales: {
+          x: { type:'time', time:{ tooltipFormat:'dd/MM HH:mm', displayFormats:{ hour:'HH:mm', day:'dd/MM', month:'MMM/yy' } }, ticks:{ maxTicksLimit:12, font:{size:10} }, grid:{color:'#f0f0f0'} },
+          y: { title:{display:true,text: serie.length>500?'Chuva/hora (mm)':'Chuva/15min (mm)',font:{size:11}}, min:0, ticks:{font:{size:10}}, grid:{color:'#f0f0f0'} }
+        }
+      };
+    }
+
+    chartInstance = new Chart(canvas, {
+      type: chartType,
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode:'index', intersect: isCota ? false : true },
+        plugins: {
+          legend: { position:'top', labels:{ boxWidth:12, font:{size:11} } },
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(isCota?2:1)} ${isCota?'m':'mm'}`
+            }
+          }
+        },
+        ...chartOptions,
+      }
+    });
+
+    // Altura mínima do canvas
+    canvas.style.minHeight = '340px';
+
+  } catch(e) {
+    document.getElementById('modal-loading').textContent = 'Erro ao carregar dados: ' + e.message;
+  }
+}
+
+// ── FETCH HELPER ──────────────────────────────────────────────────────────────
+async function api(path, opts = {}) {
+  const r = await fetch(API + path, { headers:{'Content-Type':'application/json'}, ...opts });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// ── TECLADO: ESC fecha modal ──────────────────────────────────────────────────
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharModal({}); });
+
+// ── COLETA MANUAL ─────────────────────────────────────────────────────────────
+async function coletarAgora() {
+  const btn  = document.getElementById('btn-coletar');
+  const icon = document.getElementById('btn-coletar-icon');
+  btn.disabled = true;
+  icon.className = 'spin';
+  icon.textContent = '↻';
+
+  try {
+    const r = await api('/coletar', { method: 'POST' });
+    const novas  = r.leituras_novas ?? 0;
+    const erros  = r.erros ?? 0;
+    const evento = r.detector?.acao ?? '—';
+
+    mostrarToast(
+      `✓ Coleta concluída — ${novas} leitura${novas !== 1 ? 's' : ''} nova${novas !== 1 ? 's' : ''}` +
+      (erros > 0 ? `, ${erros} erro(s)` : '') +
+      ` · Evento: ${evento}`,
+      erros > 0 ? 'erro' : 'ok'
+    );
+
+    // Atualiza os dados na tela
+    await Promise.all([carregarStatusAtual(), carregarStatus()]);
+
+  } catch(e) {
+    mostrarToast('Erro na coleta: ' + e.message, 'erro');
+  }
+
+  icon.className = '';
+  icon.textContent = '↻';
+  btn.disabled = false;
+}
+
+function mostrarToast(msg, tipo = 'ok') {
+  const el = document.getElementById('coleta-toast');
+  el.textContent = msg;
+  el.className = tipo === 'erro' ? 'erro' : '';
+  el.style.display = 'block';
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.style.display = 'none'; }, 6000);
+}
+
+// ── START ─────────────────────────────────────────────────────────────────────
+init();
+setInterval(() => { carregarStatusAtual(); carregarStatus(); }, 5 * 60 * 1000);
+</script>
+</body>
+</html>

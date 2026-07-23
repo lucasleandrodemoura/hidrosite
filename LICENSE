@@ -1,0 +1,122 @@
+Vale Taquari Tempo Open License
+Versão 1.0 — Julho de 2025
+
+Copyright (c) 2025 ValeTaquariTempo Contributors
+
+CONDIÇÕES DE USO, CÓPIA, MODIFICAÇÃO E DISTRIBUIÇÃO
+
+1. PERMISSÕES
+
+   Este software é disponibilizado ao público sob as condições estabelecidas nesta
+   licença. Qualquer pessoa física ou jurídica tem permissão para:
+
+   a) Usar, copiar e distribuir este software e seus arquivos derivados, no todo ou
+      em parte, para fins não-comerciais;
+
+   b) Modificar, adaptar, traduzir ou criar obras derivadas com base neste software;
+
+   c) Integrar este software em sistemas mais amplos, desde que respeitadas as
+      condições desta licença.
+
+2. OBRIGAÇÕES OBRIGATÓRIAS
+
+   2.1. ATRIBUIÇÃO DE CRÉDITOS
+        Todo uso, cópia, modificação ou redistribuição — parcial ou total — desta
+        obra deve manter, de forma visível e acessível:
+
+        (a) O nome original do projeto: "Vale Taquari Tempo – Coletor Hidrológico SGB";
+        (b) O repositório original: https://github.com/vale-taquari/hidro-coletor;
+        (c) O aviso de copyright acima;
+        (d) Esta licença na íntegra ou um link permanente para ela.
+
+        Em interfaces de usuário (web, mobile, relatórios), o crédito deve aparecer
+        em local de fácil leitura, como rodapé ou tela "Sobre".
+
+   2.2. COMPARTILHAMENTO IGUAL (SHARE-ALIKE / COPYLEFT)
+        Qualquer obra derivada — modificação, extensão, tradução, integração parcial
+        ou completa deste software — DEVE ser disponibilizada publicamente sob esta
+        mesma licença (Vale Taquari Tempo Open License v1.0 ou versão posterior
+        compatível), com acesso irrestrito ao código-fonte.
+
+        A obrigação de disponibilização pública se aplica inclusive quando o software
+        modificado é executado como serviço em rede (SaaS, API pública, plataforma
+        hospedada), sem distribuição de binários.
+
+   2.3. VEDAÇÃO AO USO COMERCIAL
+        É expressamente proibido:
+
+        (a) Comercializar este software ou obras derivadas, cobrando pela licença,
+            pelo acesso, pelo uso ou por qualquer outra modalidade de exploração
+            econômica direta do software em si;
+
+        (b) Oferecer este software como serviço pago (SaaS), com cobrança de
+            assinatura, taxa de acesso, planos ou qualquer outra forma de
+            monetização baseada no acesso ao software;
+
+        (c) Incluir este software em produtos ou pacotes comerciais proprietários
+            sem autorização prévia e expressa dos detentores dos direitos autorais.
+
+        Não constitui uso comercial vedado (USOS PERMITIDOS):
+
+        (i)  Uso interno por empresas para fins operacionais próprios (ex.: monitoramento
+             de risco de cheia para tomada de decisão interna), sem comercialização
+             do software;
+
+        (ii) Prestação de serviços de consultoria em que este software é uma ferramenta
+             auxiliar, desde que o software em si não seja o objeto comercializado;
+
+        (iii) PUBLICIDADE EM INTERFACE PÚBLICA: Quando este software, ou obra derivada,
+              for disponibilizado gratuitamente ao público como serviço de acesso aberto
+              (portal web, aplicativo ou API pública sem cobrança de acesso), é
+              PERMITIDA a exibição de publicidade e anúncios de terceiros como forma
+              de sustentação financeira da operação do serviço, desde que:
+              (a) o acesso ao software e aos dados continue gratuito para o usuário final;
+              (b) os créditos ao projeto original sejam mantidos de forma visível;
+              (c) as receitas de publicidade sejam destinadas exclusivamente aos custos
+                  de operação e manutenção do serviço público, sem lucro direto
+                  sobre o software em si;
+
+        (iv) DIVULGAÇÃO DE PESQUISA CIENTÍFICA: É expressamente PERMITIDO o uso deste
+             software em pesquisas acadêmicas, científicas e técnicas, incluindo a
+             publicação de artigos, relatórios, apresentações e demais trabalhos que
+             utilizem os dados ou resultados gerados por este sistema, seja em meios
+             gratuitos ou pagos (revistas científicas, congressos, livros acadêmicos),
+             desde que o software seja citado conforme a cláusula 2.1 (Atribuição).
+
+3. ISENÇÃO DE GARANTIAS E LIMITAÇÃO DE RESPONSABILIDADE
+
+   ESTE SOFTWARE É FORNECIDO "NO ESTADO EM QUE SE ENCONTRA" (AS IS), SEM GARANTIAS
+   DE QUALQUER NATUREZA, EXPRESSAS OU IMPLÍCITAS, INCLUINDO, MAS NÃO SE LIMITANDO
+   A, GARANTIAS DE COMERCIABILIDADE, ADEQUAÇÃO A UM PROPÓSITO ESPECÍFICO E NÃO
+   VIOLAÇÃO.
+
+   EM NENHUMA HIPÓTESE OS AUTORES OU DETENTORES DOS DIREITOS AUTORAIS SERÃO
+   RESPONSÁVEIS POR QUAISQUER DANOS DIRETOS, INDIRETOS, INCIDENTAIS, ESPECIAIS,
+   EXEMPLARES OU CONSEQUENCIAIS (INCLUINDO, MAS NÃO SE LIMITANDO A, DANOS POR
+   INTERRUPÇÃO DE NEGÓCIOS, PERDA DE DADOS, PERDA DE LUCROS OU DANOS À SAÚDE E
+   SEGURANÇA) DECORRENTES DO USO OU DA IMPOSSIBILIDADE DE USO DESTE SOFTWARE.
+
+   OS DADOS HIDROLÓGICOS SÃO ORIGINADOS DO SGB/CPRM E PODEM CONTER FALHAS,
+   LACUNAS OU ATRASOS. AS PROJEÇÕES DE CHEIA GERADAS POR ESTE SOFTWARE SÃO
+   ESTIMATIVAS BASEADAS EM RAZÕES HISTÓRICAS E NÃO SUBSTITUEM ALERTAS OFICIAIS
+   DA DEFESA CIVIL OU DE ÓRGÃOS COMPETENTES.
+
+4. DISPOSIÇÕES GERAIS
+
+   4.1. Se qualquer disposição desta licença for considerada inválida ou inexequível,
+        as demais disposições permanecerão em pleno vigor.
+
+   4.2. O não exercício de qualquer direito previsto nesta licença não constitui
+        renúncia a ele.
+
+   4.3. Esta licença é regida pelas leis da República Federativa do Brasil.
+        Eventuais disputas serão dirimidas no foro da Comarca de Lajeado, RS, Brasil.
+
+   4.4. Novas versões desta licença poderão ser publicadas pelos autores. O uso de
+        uma versão específica do software implica aceitação da versão da licença
+        vigente àquela época.
+
+───────────────────────────────────────────────────────────────────────────────
+Para permissões adicionais não previstas nesta licença, contate os autores via
+https://github.com/vale-taquari/hidro-coletor/issues
+───────────────────────────────────────────────────────────────────────────────
