@@ -14,3 +14,5 @@
 # Sistema operacional
 .DS_Store
 Thumbs.db
+
+data/mlr_coefs.json

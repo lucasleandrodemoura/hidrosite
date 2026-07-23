@@ -326,14 +326,15 @@ function routeRazao(\PDO $pdo, array $cfg): array
 
 function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
 {
-    // Defasagens estimadas (horas) e pesos de contribuição para Lajeado
-    // Defasagens baseadas na distância e velocidade típica de propagação de cheias no Taquari
+    // Defasagens medidas empiricamente no evento de 22-23/07/2026 (pico-a-pico vs Lajeado).
+    // Encantado: cross-correlação 2.8h (pico suspeito no BD). Demais: pico-a-pico observado.
+    // Pesos estimados pela importância hidrológica relativa de cada tributário.
     $upstream = [
-        'taquari_2_cota'  => ['nome' => 'Encantado',     'lag_h' => 9,  'peso' => 0.55],
-        'taquari_33_cota' => ['nome' => 'Barra do Fão',  'lag_h' => 11, 'peso' => 0.12],
-        'taquari_3_cota'  => ['nome' => 'Muçum',         'lag_h' => 17, 'peso' => 0.28],
-        'taquari_32_cota' => ['nome' => 'Santa Tereza',  'lag_h' => 21, 'peso' => 0.03],
-        'taquari_55_cota' => ['nome' => 'Linha Colombo', 'lag_h' => 23, 'peso' => 0.02],
+        'taquari_2_cota'  => ['nome' => 'Encantado',     'lag_h' => 3,  'peso' => 0.50],
+        'taquari_3_cota'  => ['nome' => 'Muçum',         'lag_h' => 11, 'peso' => 0.30],
+        'taquari_32_cota' => ['nome' => 'Santa Tereza',  'lag_h' => 13, 'peso' => 0.10],
+        'taquari_55_cota' => ['nome' => 'Linha Colombo', 'lag_h' => 20, 'peso' => 0.05],
+        'taquari_33_cota' => ['nome' => 'Barra do Fão',  'lag_h' => 22, 'peso' => 0.05],
     ];
 
     // Cota atual e taxa de Lajeado
@@ -435,16 +436,46 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
         $deltaPonderado += $deltaChuvaBruto;
     }
 
-    $cotaProjetada = round($cotaAtual + $deltaPonderado, 2);
-    $cfgAtencao    = $cfg['evento']['cota_atencao']['taquari_1_cota']   ?? 15.0;
-    $cfgInundacao  = $cfg['evento']['cota_inundacao']['taquari_1_cota'] ?? 19.0;
+    $cfgAtencao   = $cfg['evento']['cota_atencao']['taquari_1_cota']   ?? 15.0;
+    $cfgInundacao = $cfg['evento']['cota_inundacao']['taquari_1_cota'] ?? 19.0;
 
-    // Situação projetada
+    // ── Tenta usar modelo MLR calibrado se disponível ─────────────────────────
+    $mlrFile = __DIR__ . '/../data/mlr_coefs.json';
+    if (file_exists($mlrFile)) {
+        $mlrResult = aplicarMLR($mlrFile, $pdo, $cotaAtual);
+        if ($mlrResult !== null) {
+            $cotaProj = $mlrResult['cota_projetada'];
+            $situacao = 'normal';
+            if ($cotaProj >= $cfgInundacao) $situacao = 'cheia';
+            elseif ($cotaProj >= $cfgAtencao) $situacao = 'atencao';
+
+            return [
+                'metodo'               => 'mlr_calibrado',
+                'cota_atual_m'         => $cotaAtual,
+                'cota_projetada_24h_m' => round($cotaProj, 2),
+                'delta_esperado_m'     => round($cotaProj - $cotaAtual, 2),
+                'situacao_projetada'   => $situacao,
+                'cota_atencao_m'       => $cfgAtencao,
+                'cota_inundacao_m'     => $cfgInundacao,
+                'chuva_media_24h_mm'   => round($chuvaMedia, 1),
+                'chuva_maxima_24h_mm'  => round($chuvaMaxima, 1),
+                'confianca'            => $mlrResult['confianca'],
+                'metricas_modelo'      => $mlrResult['metricas'],
+                'n_amostras_treino'    => $mlrResult['n_amostras'],
+                'treinado_em'          => $mlrResult['treinado_em'],
+                'estacoes_upstream'    => $detalhes,
+                'aviso'                => 'Previsão por Regressão Linear Múltipla com defasagens '
+                                       . '(MLR-Lag). NSE=' . $mlrResult['metricas']['nse'] . '.',
+            ];
+        }
+    }
+
+    // ── Fallback: heurístico de tendência ─────────────────────────────────────
+    $cotaProjetada = round($cotaAtual + $deltaPonderado, 2);
     $situacao = 'normal';
     if ($cotaProjetada >= $cfgInundacao) $situacao = 'cheia';
     elseif ($cotaProjetada >= $cfgAtencao) $situacao = 'atencao';
 
-    // Confiança aumenta com mais estações e com razão calibrada
     $confianca = match (true) {
         $nContrib >= 4 && $razaoMedia > 0 => 'baixa',
         $nContrib >= 3                     => 'baixa',
@@ -466,9 +497,97 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
         'confianca'             => $confianca,
         'n_estacoes_contrib'    => $nContrib,
         'estacoes_upstream'     => $detalhes,
-        'aviso'                 => 'Estimativa heurística baseada em tendências atuais e defasagens fixas. '
-                                 . 'Assume que as condições se mantêm nas próximas horas. '
-                                 . 'Precisão melhora após acúmulo de episódios históricos calibrados.',
+        'aviso'                 => 'Estimativa heurística (defasagens empíricas de 22-23/07/2026). '
+                                 . 'Execute scripts/train_mlr.php para ativar o modelo calibrado.',
+    ];
+}
+
+/**
+ * Aplica o modelo MLR salvo em JSON sobre as leituras atuais do banco.
+ * Retorna null se os dados atuais forem insuficientes para aplicar o modelo.
+ */
+function aplicarMLR(string $mlrFile, \PDO $pdo, float $cotaAtual): ?array
+{
+    $model = json_decode(file_get_contents($mlrFile), true);
+    if (!$model || empty($model['coeficientes'])) return null;
+
+    $coefs       = $model['coeficientes'];
+    $featDef     = $model['features_def'];  // [estacao_id, lag_steps, alias]
+    $estsChuva   = $model['estacoes_chuva'];
+    $step15      = 900; // 15min em segundos
+
+    // Carrega leituras recentes necessárias (até 12h de histórico)
+    $desde = date('Y-m-d H:i:s', time() - 12 * 3600);
+    $stmt  = $pdo->prepare(
+        "SELECT estacao_id, tipo,
+                date_trunc('minute', timestamp) -
+                  (EXTRACT(MINUTE FROM timestamp)::int % 15) * INTERVAL '1 minute' AS ts_15,
+                AVG(valor::float) AS valor
+         FROM leituras
+         WHERE timestamp >= :desde
+         GROUP BY estacao_id, tipo, ts_15"
+    );
+    $stmt->execute([':desde' => $desde]);
+
+    $series = [];
+    foreach ($stmt->fetchAll() as $r) {
+        $ts = strtotime($r['ts_15']);
+        $series[$r['estacao_id']][$ts] = (float)$r['valor'];
+    }
+
+    // Timestamp base: última leitura de Lajeado
+    if (empty($series['taquari_1_cota'])) return null;
+    $tBase = max(array_keys($series['taquari_1_cota']));
+
+    // Monta vetor de features — busca leitura mais próxima em janela de ±2h
+    $vec = [];
+    foreach ($featDef as [$id, $lagSteps, $alias]) {
+        $tsFeat = $tBase - $lagSteps * $step15;
+        $v = null;
+        for ($off = 0; $off <= 8; $off++) { // 8 passos × 15min = 2h
+            $v = $series[$id][$tsFeat + $off * $step15]
+              ?? $series[$id][$tsFeat - $off * $step15]
+              ?? null;
+            if ($v !== null) break;
+        }
+        if ($v === null) return null;
+        $vec[] = $v;
+    }
+
+    // Chuva 6h e 12h
+    $chuva6h = 0.0; $chuva12h = 0.0; $nch = 0;
+    foreach ($estsChuva as $eid) {
+        if (!isset($series[$eid])) continue;
+        $s6 = 0; $s12 = 0;
+        for ($i = 1; $i <= 24; $i++) $s6  += $series[$eid][$tBase - $i * $step15] ?? 0;
+        for ($i = 1; $i <= 48; $i++) $s12 += $series[$eid][$tBase - $i * $step15] ?? 0;
+        $chuva6h += $s6; $chuva12h += $s12; $nch++;
+    }
+    $vec[] = $nch > 0 ? $chuva6h / $nch  : 0.0;
+    $vec[] = $nch > 0 ? $chuva12h / $nch : 0.0;
+    $vec[] = 1.0; // intercept
+
+    // Aplica β · x
+    $coefVals = array_values($coefs);
+    $pred = 0.0;
+    foreach ($coefVals as $i => $b) {
+        $pred += $b * ($vec[$i] ?? 0.0);
+    }
+
+    // Confiança baseada em NSE e número de amostras de treino
+    $nse = $model['metricas']['nse'] ?? 0;
+    $confianca = match (true) {
+        $nse >= 0.85 && $model['n_amostras'] >= 500 => 'moderada',
+        $nse >= 0.70 && $model['n_amostras'] >= 100 => 'baixa',
+        default                                       => 'muito_baixa',
+    };
+
+    return [
+        'cota_projetada' => $pred,
+        'confianca'      => $confianca,
+        'metricas'       => $model['metricas'],
+        'n_amostras'     => $model['n_amostras'],
+        'treinado_em'    => $model['treinado_em'],
     ];
 }
 
