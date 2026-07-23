@@ -258,12 +258,14 @@
         <path id="seg-muc-enc-borda" d="M 205,190 Q 228,252 182,315" fill="none" stroke="#7bb8d0" stroke-width="24" stroke-linecap="round"/>
         <path id="seg-enc-str-borda" d="M 182,315 Q 158,370 220,425" fill="none" stroke="#7bb8d0" stroke-width="24" stroke-linecap="round"/>
         <path id="seg-bf-str-borda"  d="M 400,315 Q 328,378 220,425" fill="none" stroke="#7bb8d0" stroke-width="20" stroke-linecap="round"/>
+        <path id="seg-lc-muc-borda"  d="M 390,95  Q 318,145 205,190" fill="none" stroke="#7bb8d0" stroke-width="18" stroke-linecap="round"/>
 
         <!-- ══ ÁGUA (corpo colorido por status) ══ -->
         <path id="seg-st-muc"  d="M 190,62  Q 162,128 205,190" fill="none" stroke="#29b6f6" stroke-width="15" stroke-linecap="round"/>
         <path id="seg-muc-enc" d="M 205,190 Q 228,252 182,315" fill="none" stroke="#29b6f6" stroke-width="15" stroke-linecap="round"/>
         <path id="seg-enc-str" d="M 182,315 Q 158,370 220,425" fill="none" stroke="#29b6f6" stroke-width="15" stroke-linecap="round"/>
         <path id="seg-bf-str"  d="M 400,315 Q 328,378 220,425" fill="none" stroke="#29b6f6" stroke-width="12" stroke-linecap="round"/>
+        <path id="seg-lc-muc"  d="M 390,95  Q 318,145 205,190" fill="none" stroke="#29b6f6" stroke-width="10" stroke-linecap="round"/>
 
         <!-- ══ FLUXO ANIMADO (sobreposição branca semitransparente) ══ -->
         <path class="fluxo-anim" d="M 190,62  Q 162,128 205,190" fill="none" stroke="#ffffffaa" stroke-width="5" stroke-dasharray="16 13" stroke-linecap="round">
@@ -278,6 +280,9 @@
         <path class="fluxo-anim" d="M 400,315 Q 328,378 220,425" fill="none" stroke="#ffffffaa" stroke-width="4" stroke-dasharray="13 11" stroke-linecap="round">
           <animate attributeName="stroke-dashoffset" from="0" to="-24" dur="1.7s" repeatCount="indefinite"/>
         </path>
+        <path class="fluxo-anim" d="M 390,95  Q 318,145 205,190" fill="none" stroke="#ffffffaa" stroke-width="3.5" stroke-dasharray="12 10" stroke-linecap="round">
+          <animate attributeName="stroke-dashoffset" from="0" to="-22" dur="1.9s" repeatCount="indefinite"/>
+        </path>
 
         <!-- ══ SANTA TEREZA ══ -->
         <g id="est-sta-tereza" style="cursor:pointer" onclick="abrirGrafico('taquari_32_cota','cota','Santa Tereza')">
@@ -289,6 +294,18 @@
           <text x="190" y="38"  text-anchor="middle" font-size="11"  font-weight="700" fill="#1a1a2e">Santa Tereza</text>
           <text id="val-sta-tereza"  x="190" y="93"  text-anchor="middle" font-size="11" font-weight="700" fill="#333">— m</text>
           <text id="tend-sta-tereza" x="190" y="108" text-anchor="middle" font-size="9.5" fill="#666">—</text>
+        </g>
+
+        <!-- ══ LINHA COLOMBO (tributário → Muçum) ══ -->
+        <g id="est-linha-colombo" style="cursor:pointer" onclick="abrirGrafico('taquari_55_cota','cota','Linha Colombo')">
+          <circle id="pulso-linha-colombo" cx="390" cy="95" r="22" fill="none" stroke="#d35400" stroke-width="2" opacity="0"/>
+          <circle cx="390" cy="95" r="18" fill="white" id="anel-linha-colombo" stroke="#d35400" stroke-width="3" filter="url(#f-sombra)"/>
+          <circle cx="390" cy="95" r="12" fill="#fde8d8"/>
+          <text x="390" y="91"  text-anchor="middle" font-size="8" font-weight="800" fill="#d35400">LINHA</text>
+          <text x="390" y="101" text-anchor="middle" font-size="8" font-weight="800" fill="#d35400">COLOMBO</text>
+          <text x="390" y="72"  text-anchor="middle" font-size="11" font-weight="700" fill="#1a1a2e">Linha Colombo</text>
+          <text id="val-linha-colombo"  x="390" y="122" text-anchor="middle" font-size="11" font-weight="700" fill="#333">— m</text>
+          <text id="tend-linha-colombo" x="390" y="137" text-anchor="middle" font-size="9.5" fill="#666">—</text>
         </g>
 
         <!-- ══ MUÇUM ══ -->
@@ -459,6 +476,7 @@ const CFG_COTA = {
   taquari_3_cota:  { nome:'Muçum',           atencao: 9.00, inundacao:18.00, cor:'#8e44ad', corAtencao:'#e07b00', corCheia:'#c0392b' },
   taquari_32_cota: { nome:'Santa Tereza',    atencao: 9.00, inundacao:15.00, cor:'#2980b9', corAtencao:'#e07b00', corCheia:'#c0392b' },
   taquari_33_cota: { nome:'Barra do Fão',    atencao: 6.00, inundacao:10.00, cor:'#27ae60', corAtencao:'#e07b00', corCheia:'#c0392b' },
+  taquari_55_cota: { nome:'Linha Colombo',   atencao: 7.00, inundacao:12.50, cor:'#d35400', corAtencao:'#e07b00', corCheia:'#c0392b' },
 };
 const CFG_CHUVA = {
   taquari_9_chuva:  'Vacaria',
@@ -471,7 +489,7 @@ const CFG_CHUVA = {
 };
 
 const COTA_CRITICA_LAJEADO = 25.0;
-const ORDEM_COTAS = ['taquari_1_cota','taquari_2_cota','taquari_3_cota','taquari_32_cota','taquari_33_cota'];
+const ORDEM_COTAS = ['taquari_1_cota','taquari_2_cota','taquari_3_cota','taquari_55_cota','taquari_32_cota','taquari_33_cota'];
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let chartInstance = null;
@@ -505,11 +523,12 @@ async function carregarStatus() {
 
 // ── MAPA ANIMADO DO RIO ───────────────────────────────────────────────────────
 const MAPA_EST = {
-  'taquari_32_cota': { seg: 'st-muc',  anel: 'anel-sta-tereza', pulso: 'pulso-sta-tereza', val: 'val-sta-tereza',  tend: 'tend-sta-tereza' },
-  'taquari_3_cota':  { seg: 'muc-enc', anel: 'anel-mucum',      pulso: 'pulso-mucum',      val: 'val-mucum',       tend: 'tend-mucum'      },
-  'taquari_2_cota':  { seg: 'enc-str', anel: 'anel-encantado',  pulso: 'pulso-encantado',  val: 'val-encantado',   tend: 'tend-encantado'  },
-  'taquari_33_cota': { seg: 'bf-str',  anel: 'anel-barra-fao',  pulso: 'pulso-barra-fao',  val: 'val-barra-fao',   tend: 'tend-barra-fao'  },
-  'taquari_1_cota':  { seg: null,      anel: 'anel-estrela',    pulso: 'pulso-estrela',    val: 'val-estrela',     tend: 'tend-estrela'    },
+  'taquari_32_cota': { seg: 'st-muc',  anel: 'anel-sta-tereza',     pulso: 'pulso-sta-tereza',     val: 'val-sta-tereza',      tend: 'tend-sta-tereza'     },
+  'taquari_55_cota': { seg: 'lc-muc',  anel: 'anel-linha-colombo',  pulso: 'pulso-linha-colombo',  val: 'val-linha-colombo',   tend: 'tend-linha-colombo'  },
+  'taquari_3_cota':  { seg: 'muc-enc', anel: 'anel-mucum',          pulso: 'pulso-mucum',          val: 'val-mucum',           tend: 'tend-mucum'          },
+  'taquari_2_cota':  { seg: 'enc-str', anel: 'anel-encantado',      pulso: 'pulso-encantado',      val: 'val-encantado',       tend: 'tend-encantado'      },
+  'taquari_33_cota': { seg: 'bf-str',  anel: 'anel-barra-fao',      pulso: 'pulso-barra-fao',      val: 'val-barra-fao',       tend: 'tend-barra-fao'      },
+  'taquari_1_cota':  { seg: null,      anel: 'anel-estrela',        pulso: 'pulso-estrela',        val: 'val-estrela',         tend: 'tend-estrela'        },
 };
 
 function atualizarMapaRio(cotas) {
