@@ -1076,6 +1076,7 @@ function mostrarToast(msg, tipo = 'ok') {
 // ── START ─────────────────────────────────────────────────────────────────────
 init();
 setInterval(() => { carregarStatusAtual(); carregarStatus(); }, 5 * 60 * 1000);
+setInterval(coletarAgora, 15 * 60 * 1000);
 </script>
 </body>
 </html>
