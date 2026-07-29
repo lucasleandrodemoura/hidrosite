@@ -261,7 +261,8 @@
         <ellipse cx="490" cy="400" rx="65" ry="25" fill="#c8dfc8" opacity=".4"/>
 
         <!-- ══ MARGENS (borda do rio — camada inferior) ══ -->
-        <path id="seg-jj-st-borda"   d="M 85,30   Q 135,47  190,62"  fill="none" stroke="#7bb8d0" stroke-width="16" stroke-linecap="round"/>
+        <path id="seg-jj-ca-borda"   d="M 85,30   Q 110,39  136,46"  fill="none" stroke="#7bb8d0" stroke-width="16" stroke-linecap="round"/>
+        <path id="seg-ca-st-borda"   d="M 136,46  Q 163,54  190,62"  fill="none" stroke="#7bb8d0" stroke-width="16" stroke-linecap="round"/>
         <path id="seg-st-muc-borda"  d="M 190,62  Q 162,128 205,190" fill="none" stroke="#7bb8d0" stroke-width="24" stroke-linecap="round"/>
         <path id="seg-muc-enc-borda" d="M 205,190 Q 228,252 182,315" fill="none" stroke="#7bb8d0" stroke-width="24" stroke-linecap="round"/>
         <path id="seg-enc-str-borda" d="M 182,315 Q 158,370 220,425" fill="none" stroke="#7bb8d0" stroke-width="24" stroke-linecap="round"/>
@@ -269,7 +270,8 @@
         <path id="seg-lc-muc-borda"  d="M 390,95  Q 318,145 205,190" fill="none" stroke="#7bb8d0" stroke-width="18" stroke-linecap="round"/>
 
         <!-- ══ ÁGUA (corpo colorido por status) ══ -->
-        <path id="seg-jj-st"   d="M 85,30   Q 135,47  190,62"  fill="none" stroke="#29b6f6" stroke-width="9"  stroke-linecap="round"/>
+        <path id="seg-jj-ca"   d="M 85,30   Q 110,39  136,46"  fill="none" stroke="#29b6f6" stroke-width="9"  stroke-linecap="round"/>
+        <path id="seg-ca-st"   d="M 136,46  Q 163,54  190,62"  fill="none" stroke="#29b6f6" stroke-width="9"  stroke-linecap="round"/>
         <path id="seg-st-muc"  d="M 190,62  Q 162,128 205,190" fill="none" stroke="#29b6f6" stroke-width="15" stroke-linecap="round"/>
         <path id="seg-muc-enc" d="M 205,190 Q 228,252 182,315" fill="none" stroke="#29b6f6" stroke-width="15" stroke-linecap="round"/>
         <path id="seg-enc-str" d="M 182,315 Q 158,370 220,425" fill="none" stroke="#29b6f6" stroke-width="15" stroke-linecap="round"/>
@@ -277,7 +279,10 @@
         <path id="seg-lc-muc"  d="M 390,95  Q 318,145 205,190" fill="none" stroke="#29b6f6" stroke-width="10" stroke-linecap="round"/>
 
         <!-- ══ FLUXO ANIMADO (sobreposição branca semitransparente) ══ -->
-        <path class="fluxo-anim" d="M 85,30   Q 135,47  190,62"  fill="none" stroke="#ffffffaa" stroke-width="3" stroke-dasharray="10 9" stroke-linecap="round">
+        <path class="fluxo-anim" d="M 85,30   Q 110,39  136,46"  fill="none" stroke="#ffffffaa" stroke-width="3" stroke-dasharray="10 9" stroke-linecap="round">
+          <animate attributeName="stroke-dashoffset" from="0" to="-19" dur="2.1s" repeatCount="indefinite"/>
+        </path>
+        <path class="fluxo-anim" d="M 136,46  Q 163,54  190,62"  fill="none" stroke="#ffffffaa" stroke-width="3" stroke-dasharray="10 9" stroke-linecap="round">
           <animate attributeName="stroke-dashoffset" from="0" to="-19" dur="2.1s" repeatCount="indefinite"/>
         </path>
         <path class="fluxo-anim" d="M 190,62  Q 162,128 205,190" fill="none" stroke="#ffffffaa" stroke-width="5" stroke-dasharray="16 13" stroke-linecap="round">
@@ -306,6 +311,17 @@
           <text x="85" y="12" text-anchor="middle" font-size="9"   font-weight="700" fill="#1a1a2e">L. José Júlio</text>
           <text id="val-jose-julio"  x="85" y="52" text-anchor="middle" font-size="10" font-weight="700" fill="#333">— m</text>
           <text id="tend-jose-julio" x="85" y="64" text-anchor="middle" font-size="9"  fill="#666">—</text>
+        </g>
+
+        <!-- ══ CASTRO ALVES (UHE CERAN — defluência) ══ -->
+        <g id="est-castro-alves" style="cursor:pointer" onclick="abrirGrafico('ceran_ca_defluencia','vazao','Castro Alves — Defluência')">
+          <circle id="pulso-castro-alves" cx="136" cy="46" r="18" fill="none" stroke="#6a1b9a" stroke-width="2" opacity="0"/>
+          <circle cx="136" cy="46" r="13" fill="white" id="anel-castro-alves" stroke="#6a1b9a" stroke-width="2.5" filter="url(#f-sombra)"/>
+          <circle cx="136" cy="46" r="8"  fill="#ede7f6"/>
+          <text x="136" y="43" text-anchor="middle" font-size="5.5" font-weight="800" fill="#6a1b9a">CASTRO</text>
+          <text x="136" y="51" text-anchor="middle" font-size="5.5" font-weight="800" fill="#6a1b9a">ALVES</text>
+          <text x="136" y="29" text-anchor="middle" font-size="9"   font-weight="700" fill="#1a1a2e">Castro Alves</text>
+          <text id="val-castro-alves" x="136" y="67" text-anchor="middle" font-size="9" font-weight="700" fill="#6a1b9a">— m³/s</text>
         </g>
 
         <!-- ══ SANTA TEREZA ══ -->
@@ -513,6 +529,13 @@ const CFG_CHUVA = {
   taquari_33_chuva: 'Barra do Fão',
 };
 
+const CFG_VAZAO = {
+  ceran_ca_defluencia:     { nome:'Castro Alves — Defluência', cor:'#6a1b9a', unidade:'m³/s' },
+  ceran_ca_afluente:       { nome:'Castro Alves — Afluente',   cor:'#4527a0', unidade:'m³/s' },
+  ceran_ca_nivel_montante: { nome:'Castro Alves — Nível Mont.',cor:'#1565c0', unidade:'m'    },
+  ceran_ca_nivel_jusante:  { nome:'Castro Alves — Nível Jus.', cor:'#0277bd', unidade:'m'    },
+};
+
 const COTA_CRITICA_LAJEADO = 25.0;
 const ORDEM_COTAS = ['taquari_1_cota','taquari_2_cota','taquari_3_cota','taquari_55_cota','taquari_32_cota','taquari_4_cota','taquari_33_cota'];
 
@@ -624,11 +647,20 @@ async function carregarStatusAtual() {
     renderCotas(d.cotas ?? {});
     renderChuva(d.chuvas ?? {});
     atualizarMapaRio(d.cotas ?? {});
+    atualizarCastroAlves(d.vazoes ?? {});
     carregarPrevisaoLajeado();
   } catch(e) {
     document.getElementById('cotas-grid').innerHTML = '<p style="color:#c00;font-size:.84rem">Erro ao carregar cotas.</p>';
     document.getElementById('chuva-grid').innerHTML = '<p style="color:#c00;font-size:.84rem">Erro ao carregar chuva.</p>';
   }
+}
+
+function atualizarCastroAlves(vazoes) {
+  const el = document.getElementById('val-castro-alves');
+  if (!el) return;
+  const d = vazoes['ceran_ca_defluencia'];
+  if (!d) { el.textContent = '— m³/s'; return; }
+  el.textContent = Number(d.valor).toLocaleString('pt-BR', {maximumFractionDigits:0}) + ' m³/s';
 }
 
 function renderCotas(cotas) {
@@ -941,7 +973,8 @@ function abrirGrafico(estacaoId, tipo, nome) {
   modalTipo      = tipo;
   modalHoras     = 24;
 
-  document.getElementById('modal-title').textContent = (tipo === 'cota' ? '📏 Cota — ' : '🌧️ Chuva — ') + nome;
+  const emoji = tipo === 'cota' ? '📏 Cota — ' : tipo === 'vazao' ? '💧 Vazão — ' : '🌧️ Chuva — ';
+  document.getElementById('modal-title').textContent = emoji + nome;
   document.getElementById('modal-overlay').classList.add('open');
 
   // Botão 24h ativo por padrão
@@ -984,17 +1017,20 @@ async function carregarGrafico() {
     // Atualiza subtítulo com range real dos dados
     const dtInicio = new Date(serie[0].ts).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
     const dtFim    = new Date(serie[serie.length-1].ts).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    const isVazao  = modalTipo === 'vazao';
+    const isCota   = modalTipo === 'cota';
+    const emojiTit = isCota ? '📏 Cota — ' : isVazao ? '💧 Vazão — ' : '🌧️ Chuva — ';
+    const nomeEst  = CFG_COTA[modalEstacaoId]?.nome ?? CFG_VAZAO[modalEstacaoId]?.nome ?? CFG_CHUVA[modalEstacaoId] ?? modalEstacaoId;
     document.getElementById('modal-title').textContent =
-      (modalTipo === 'cota' ? '📏 Cota — ' : '🌧️ Chuva — ') +
-      (CFG_COTA[modalEstacaoId]?.nome ?? CFG_CHUVA[modalEstacaoId] ?? modalEstacaoId) +
-      ` · ${serie.length} pontos · ${dtInicio} → ${dtFim}`;
+      emojiTit + nomeEst + ` · ${serie.length} pontos · ${dtInicio} → ${dtFim}`;
 
     const labels = serie.map(r => new Date(r.ts));
     const values = serie.map(r => parseFloat(r.valor));
 
     const cfg = CFG_COTA[modalEstacaoId];
-    const isCota = modalTipo === 'cota';
-    const corBase = isCota ? (cfg ? cfg.cor : '#1a6faf') : '#2a8fd4';
+    const cfgVaz = CFG_VAZAO[modalEstacaoId];
+    const corBase = isCota ? (cfg?.cor ?? '#1a6faf') : isVazao ? (cfgVaz?.cor ?? '#6a1b9a') : '#2a8fd4';
+    const unidade = isVazao ? (cfgVaz?.unidade ?? 'm³/s') : isCota ? 'm' : 'mm';
 
     document.getElementById('modal-loading').style.display = 'none';
     const canvas = document.getElementById('modal-chart');
@@ -1002,10 +1038,11 @@ async function carregarGrafico() {
 
     let datasets, chartType, chartOptions;
 
-    if (isCota) {
-      // ── COTA: gráfico de linha com área preenchida ──────────────────────────
+    if (isCota || isVazao) {
+      // ── COTA / VAZÃO: gráfico de linha com área preenchida ─────────────────
+      const labelSerie = isVazao ? `Vazão (${unidade})` : 'Cota (m)';
       datasets = [{
-        label: 'Cota (m)',
+        label: labelSerie,
         data: labels.map((t,i) => ({x:t, y:values[i]})),
         borderColor: corBase,
         backgroundColor: corBase + '22',
@@ -1016,35 +1053,38 @@ async function carregarGrafico() {
         borderWidth: 2,
       }];
 
-      // Linha de atenção
-      if (cfg?.atencao) datasets.push({
-        label: `Atenção (${cfg.atencao}m)`,
-        data: labels.map(t => ({x:t, y:cfg.atencao})),
-        borderColor: '#e07b00',
-        borderDash: [4,4],
-        borderWidth: 1.5,
-        pointRadius: 0,
-        fill: false,
-        type: 'line',
-      });
+      if (!isVazao) {
+        // Linha de atenção (só para cotas)
+        if (cfg?.atencao) datasets.push({
+          label: `Atenção (${cfg.atencao}m)`,
+          data: labels.map(t => ({x:t, y:cfg.atencao})),
+          borderColor: '#e07b00',
+          borderDash: [4,4],
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: false,
+          type: 'line',
+        });
 
-      // Linha de inundação
-      if (cfg?.inundacao) datasets.push({
-        label: `Inundação (${cfg.inundacao}m)`,
-        data: labels.map(t => ({x:t, y:cfg.inundacao})),
-        borderColor: '#c0392b',
-        borderDash: [6,4],
-        borderWidth: 1.5,
-        pointRadius: 0,
-        fill: false,
-        type: 'line',
-      });
+        // Linha de inundação (só para cotas)
+        if (cfg?.inundacao) datasets.push({
+          label: `Inundação (${cfg.inundacao}m)`,
+          data: labels.map(t => ({x:t, y:cfg.inundacao})),
+          borderColor: '#c0392b',
+          borderDash: [6,4],
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: false,
+          type: 'line',
+        });
+      }
 
       chartType = 'line';
+      const yTitle = isVazao ? `Vazão (${unidade})` : 'Cota (m)';
       chartOptions = {
         scales: {
           x: { type:'time', time:{ tooltipFormat:'dd/MM HH:mm', displayFormats:{ hour:'HH:mm', day:'dd/MM', month:'MMM/yy' } }, ticks:{ maxTicksLimit:10, font:{size:10} }, grid:{color:'#f0f0f0'} },
-          y: { title:{display:true,text:'Cota (m)',font:{size:11}}, ticks:{font:{size:10}}, grid:{color:'#f0f0f0'} }
+          y: { title:{display:true,text:yTitle,font:{size:11}}, ticks:{font:{size:10}}, grid:{color:'#f0f0f0'} }
         }
       };
 
@@ -1105,7 +1145,10 @@ async function carregarGrafico() {
           legend: { position:'top', labels:{ boxWidth:12, font:{size:11} } },
           tooltip: {
             callbacks: {
-              label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(isCota?2:1)} ${isCota?'m':'mm'}`
+              label: ctx => {
+                const prec = isCota ? 2 : isVazao ? 0 : 1;
+                return `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(prec)} ${unidade}`;
+              }
             }
           }
         },

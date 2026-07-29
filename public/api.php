@@ -24,6 +24,7 @@ require_once __DIR__ . '/../src/Bootstrap.php';
 use ValeTaquari\Bootstrap;
 use ValeTaquari\Database;
 use ValeTaquari\Collector;
+use ValeTaquari\CeranCollector;
 use ValeTaquari\EventDetector;
 use ValeTaquari\Logger;
 use ValeTaquari\Projector;
@@ -145,6 +146,7 @@ function routeStatusAtual(\PDO $pdo, array $cfg): array
 
     $cotas  = [];
     $chuvas = [];
+    $vazoes = [];
 
     foreach ($rows as $r) {
         $id = $r['estacao_id'];
@@ -153,6 +155,11 @@ function routeStatusAtual(\PDO $pdo, array $cfg): array
             'valor'     => (float)$r['valor'],
             'timestamp' => $r['timestamp'],
         ];
+
+        if ($r['tipo'] === 'vazao') {
+            $vazoes[$id] = $entry;
+            continue;
+        }
 
         if ($r['tipo'] === 'cota') {
             $cAtencao   = $cfg['evento']['cota_atencao'][$id]   ?? null;
@@ -207,6 +214,7 @@ function routeStatusAtual(\PDO $pdo, array $cfg): array
         'timestamp' => date('Y-m-d H:i:s'),
         'cotas'     => $cotas,
         'chuvas'    => $chuvas,
+        'vazoes'    => $vazoes,
     ];
 }
 
@@ -229,7 +237,7 @@ function routeLeituras(\PDO $pdo): array
         $where[]            = 'l.estacao_id = :estacao';
         $params[':estacao'] = $estacao;
     }
-    if ($tipo !== null && in_array($tipo, ['chuva', 'cota'], true)) {
+    if ($tipo !== null && in_array($tipo, ['chuva', 'cota', 'vazao'], true)) {
         $where[]         = 'l.tipo = :tipo';
         $params[':tipo'] = $tipo;
     }
@@ -667,16 +675,23 @@ function routeColetar(\PDO $pdo, array $cfg, Logger $logger): array
 
     $coletor   = new Collector($pdo, $logger, $cfg);
     $resultado = $coletor->coletarTodas();
+
+    // Coleta dados da UHE Castro Alves (CERAN) — vazão afluente e defluência
+    $ceran          = new CeranCollector($pdo, $logger, $cfg);
+    $resultadoCeran = $ceran->coletar();
+
     $detector  = new EventDetector($pdo, $logger, $cfg);
     $acao      = $detector->verificar();
 
-    $totalNovas = array_sum(array_column($resultado, 'novas'));
-    $totalErros = count(array_filter($resultado, fn($r) => $r['erro'] !== null));
+    $totalNovas = array_sum(array_column($resultado, 'novas')) + $resultadoCeran['novas'];
+    $totalErros = count(array_filter($resultado, fn($r) => $r['erro'] !== null))
+                + ($resultadoCeran['erro'] !== null ? 1 : 0);
 
     return [
-        'leituras_novas' => $totalNovas,
-        'erros'          => $totalErros,
-        'detector'       => $acao,
-        'detalhes'       => $resultado,
+        'leituras_novas'   => $totalNovas,
+        'erros'            => $totalErros,
+        'detector'         => $acao,
+        'detalhes'         => $resultado,
+        'ceran_castro_alves' => $resultadoCeran,
     ];
 }
