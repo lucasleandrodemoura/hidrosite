@@ -10,9 +10,11 @@
 
 # Backups gerados automaticamente (o backup inicial está em database/ e é versionado)
 /database/hidro_backup_*.sql
+/data/backup_hidro_*.json
 
 # Sistema operacional
 .DS_Store
 Thumbs.db
 
+# Modelo gerado pelo treino — não versionar automaticamente
 data/mlr_coefs.json

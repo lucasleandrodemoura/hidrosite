@@ -326,15 +326,17 @@ function routeRazao(\PDO $pdo, array $cfg): array
 
 function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
 {
+    $pisoLeito = $cfg['evento']['cota_minima_leito']['taquari_1_cota'] ?? 12.00;
     // Defasagens medidas empiricamente no evento de 22-23/07/2026 (pico-a-pico vs Lajeado).
     // Encantado: cross-correlação 2.8h (pico suspeito no BD). Demais: pico-a-pico observado.
     // Pesos estimados pela importância hidrológica relativa de cada tributário.
     $upstream = [
-        'taquari_2_cota'  => ['nome' => 'Encantado',     'lag_h' => 3,  'peso' => 0.50],
-        'taquari_3_cota'  => ['nome' => 'Muçum',         'lag_h' => 11, 'peso' => 0.30],
-        'taquari_32_cota' => ['nome' => 'Santa Tereza',  'lag_h' => 13, 'peso' => 0.10],
-        'taquari_55_cota' => ['nome' => 'Linha Colombo', 'lag_h' => 20, 'peso' => 0.05],
-        'taquari_33_cota' => ['nome' => 'Barra do Fão',  'lag_h' => 22, 'peso' => 0.05],
+        'taquari_2_cota'  => ['nome' => 'Encantado',         'lag_h' => 3,  'peso' => 0.45],
+        'taquari_3_cota'  => ['nome' => 'Muçum',             'lag_h' => 11, 'peso' => 0.30],
+        'taquari_32_cota' => ['nome' => 'Santa Tereza',      'lag_h' => 13, 'peso' => 0.10],
+        'taquari_4_cota'  => ['nome' => 'Linha José Júlio',  'lag_h' => 16, 'peso' => 0.08],
+        'taquari_55_cota' => ['nome' => 'Linha Colombo',     'lag_h' => 20, 'peso' => 0.04],
+        'taquari_33_cota' => ['nome' => 'Barra do Fão',      'lag_h' => 22, 'peso' => 0.03],
     ];
 
     // Cota atual e taxa de Lajeado
@@ -421,6 +423,21 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
     );
     $razaoMedia = (float)($stmtR->fetchColumn() ?: 0);
 
+    // AMC (Antecedent Moisture Condition): mínimo de Lajeado nas últimas 72h como proxy
+    // de encharcamento do solo. Solo encharcado = mais escoamento superficial = menor razão efetiva.
+    // Evento jul/2026b: AMC extra de +0.51m sobre o leito reduziu a "capacidade de absorção" da bacia.
+    $amcFator = 1.0;
+    $cotaMinima72h = $cotaAtual;
+    $stmtAmc = $pdo->query(
+        "SELECT MIN(valor::float) FROM leituras
+         WHERE estacao_id = 'taquari_1_cota'
+           AND timestamp >= NOW() - INTERVAL '72 hours'"
+    );
+    $cotaMinima72h = (float)($stmtAmc->fetchColumn() ?: $cotaAtual);
+    // Excesso acima de 0.5m sobre o piso do leito indica bacia pré-saturada
+    $excessoAMC = max(0.0, $cotaMinima72h - ($pisoLeito + 0.5));
+    $amcFator   = 1.0 + min($excessoAMC * 0.20, 0.40); // até +40% de amplificação
+
     if ($razaoMedia > 0 && $chuvaMedia > 5) {
         // Chuva das últimas 12h ainda vai chegar em Lajeado (lag médio ~16h desde cabeceira)
         $desde12h    = date('Y-m-d H:i:s', strtotime('-12 hours'));
@@ -431,8 +448,8 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
         $stmtCh12->execute([':desde' => $desde12h]);
         $chuva12h = (float)($stmtCh12->fetchColumn() ?: 0);
 
-        // Estima impacto: chuva recente / razão * fator conservador (50% já chegou)
-        $deltaChuvaBruto = ($chuva12h * 0.5) / $razaoMedia;
+        // Estima impacto: chuva recente / razão × fator conservador × AMC
+        $deltaChuvaBruto = ($chuva12h * 0.5) / $razaoMedia * $amcFator;
         $deltaPonderado += $deltaChuvaBruto;
     }
 
@@ -444,7 +461,7 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
     if (file_exists($mlrFile)) {
         $mlrResult = aplicarMLR($mlrFile, $pdo, $cotaAtual);
         if ($mlrResult !== null) {
-            $cotaProj = $mlrResult['cota_projetada'];
+            $cotaProj = max($mlrResult['cota_projetada'], $pisoLeito);
             $situacao = 'normal';
             if ($cotaProj >= $cfgInundacao) $situacao = 'cheia';
             elseif ($cotaProj >= $cfgAtencao) $situacao = 'atencao';
@@ -471,7 +488,7 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
     }
 
     // ── Fallback: heurístico de tendência ─────────────────────────────────────
-    $cotaProjetada = round($cotaAtual + $deltaPonderado, 2);
+    $cotaProjetada = round(max($cotaAtual + $deltaPonderado, $pisoLeito), 2);
     $situacao = 'normal';
     if ($cotaProjetada >= $cfgInundacao) $situacao = 'cheia';
     elseif ($cotaProjetada >= $cfgAtencao) $situacao = 'atencao';
@@ -494,10 +511,12 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
         'chuva_media_24h_mm'    => round($chuvaMedia, 1),
         'chuva_maxima_24h_mm'   => round($chuvaMaxima, 1),
         'delta_chuva_m'         => round($deltaChuvaBruto, 3),
+        'amc_cota_minima_72h_m' => round($cotaMinima72h, 2),
+        'amc_fator'             => round($amcFator, 3),
         'confianca'             => $confianca,
         'n_estacoes_contrib'    => $nContrib,
         'estacoes_upstream'     => $detalhes,
-        'aviso'                 => 'Estimativa heurística (defasagens empíricas de 22-23/07/2026). '
+        'aviso'                 => 'Estimativa heurística com fator AMC (solo encharcado). '
                                  . 'Execute scripts/train_mlr.php para ativar o modelo calibrado.',
     ];
 }
@@ -516,8 +535,13 @@ function aplicarMLR(string $mlrFile, \PDO $pdo, float $cotaAtual): ?array
     $estsChuva   = $model['estacoes_chuva'];
     $step15      = 900; // 15min em segundos
 
-    // Carrega leituras recentes necessárias (até 12h de histórico)
-    $desde = date('Y-m-d H:i:s', time() - 12 * 3600);
+    // Calcula janela de dados necessária: max(lag máx das features, 72h de chuva) + buffer.
+    // Bug fix v2: originalmente carregava apenas 12h, mas chuva_48h e chuva_72h
+    // precisam de até 72h de histórico. Sem isso, os acumulados de chuva ficavam truncados.
+    $maxLagSteps  = max(array_column($featDef, 1));
+    $maxLagHoras  = (int)ceil($maxLagSteps * 15 / 60); // steps × 15min → horas
+    $janelaHoras  = max($maxLagHoras, 72) + 4;         // 72h de chuva + 4h de folga
+    $desde = date('Y-m-d H:i:s', time() - $janelaHoras * 3600);
     $stmt  = $pdo->prepare(
         "SELECT estacao_id, tipo,
                 date_trunc('minute', timestamp) -
@@ -554,17 +578,22 @@ function aplicarMLR(string $mlrFile, \PDO $pdo, float $cotaAtual): ?array
         $vec[] = $v;
     }
 
-    // Chuva 6h e 12h
-    $chuva6h = 0.0; $chuva12h = 0.0; $nch = 0;
+    // Chuva 24h, 48h e 72h (janelas calibradas nos eventos jul/2026)
+    $chuva24h = 0.0; $chuva48h = 0.0; $chuva72h = 0.0; $nch = 0;
     foreach ($estsChuva as $eid) {
         if (!isset($series[$eid])) continue;
-        $s6 = 0; $s12 = 0;
-        for ($i = 1; $i <= 24; $i++) $s6  += $series[$eid][$tBase - $i * $step15] ?? 0;
-        for ($i = 1; $i <= 48; $i++) $s12 += $series[$eid][$tBase - $i * $step15] ?? 0;
-        $chuva6h += $s6; $chuva12h += $s12; $nch++;
+        $s24 = 0.0; $s48 = 0.0; $s72 = 0.0;
+        for ($i = 1; $i <= 96;  $i++) $s24 += $series[$eid][$tBase - $i * $step15] ?? 0;
+        for ($i = 1; $i <= 192; $i++) $s48 += $series[$eid][$tBase - $i * $step15] ?? 0;
+        for ($i = 1; $i <= 288; $i++) $s72 += $series[$eid][$tBase - $i * $step15] ?? 0;
+        $chuva24h += $s24; $chuva48h += $s48; $chuva72h += $s72; $nch++;
     }
-    $vec[] = $nch > 0 ? $chuva6h / $nch  : 0.0;
-    $vec[] = $nch > 0 ? $chuva12h / $nch : 0.0;
+    $vec[] = $nch > 0 ? $chuva24h / $nch : 0.0;
+    $vec[] = $nch > 0 ? $chuva48h / $nch : 0.0;
+    // chuva_72h: incluída apenas se o modelo foi treinado com ela (v2+)
+    if (in_array('chuva_72h', $model['features'], true)) {
+        $vec[] = $nch > 0 ? $chuva72h / $nch : 0.0;
+    }
     $vec[] = 1.0; // intercept
 
     // Aplica β · x

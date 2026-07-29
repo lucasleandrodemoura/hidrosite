@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Treino do modelo MLR-Lag (Regressão Linear Múltipla com Defasagens)
+ * Treino do modelo MLR-Lag v2 (Regressão Linear Múltipla com Defasagens + AMC)
  *
  * Uso: php scripts/train_mlr.php [--horizonte=24] [--lambda=0.01]
  *
@@ -10,6 +10,11 @@ declare(strict_types=1);
  *
  * Método: Ridge Regression (OLS + L2) com features defasadas de cada
  * estação upstream. Prediz h_Lajeado(t + horizonte_h).
+ *
+ * v2: adiciona features de AMC (Antecedent Moisture Condition) — cotas de
+ * Lajeado em t-12h, t-24h e t-48h como proxy de encharcamento do solo,
+ * defasagens longas de Encantado/Muçum e janela de chuva de 72h.
+ * Calibrado com eventos de 20-23/07/2026 e 28-29/07/2026.
  *
  * Referência: Box & Jenkins (1970); Collischonn & Tucci (2001, RBRH).
  */
@@ -50,14 +55,20 @@ $features_def = [
     ['taquari_2_cota',  4,  'enc_t1h'],
     ['taquari_2_cota',  8,  'enc_t2h'],
     ['taquari_2_cota', 12,  'enc_t3h'],
+    ['taquari_2_cota', 16,  'enc_t4h'],   // tendência longa de Encantado
+    ['taquari_2_cota', 24,  'enc_t6h'],   // tendência longa de Encantado
     // Muçum — lag ~11h até Lajeado
     ['taquari_3_cota',  0,  'muc_t0'],
     ['taquari_3_cota',  4,  'muc_t1h'],
     ['taquari_3_cota',  8,  'muc_t2h'],
     ['taquari_3_cota', 16,  'muc_t4h'],
+    ['taquari_3_cota', 24,  'muc_t6h'],   // tendência longa de Muçum
     // Santa Tereza — lag ~13h até Lajeado
     ['taquari_32_cota', 0,  'sta_t0'],
     ['taquari_32_cota', 8,  'sta_t2h'],
+    // Linha José Júlio — lag ~16h até Lajeado (entre Santa Tereza e Linha Colombo)
+    ['taquari_4_cota',  0,  'jjulio_t0'],
+    ['taquari_4_cota',  8,  'jjulio_t2h'],
     // Linha Colombo — lag ~20h até Lajeado
     ['taquari_55_cota', 0,  'lc_t0'],
     // Barra do Fão — lag ~22h até Lajeado
@@ -67,6 +78,12 @@ $features_def = [
     ['taquari_1_cota',  4,  'laj_t1h'],
     ['taquari_1_cota',  8,  'laj_t2h'],
     ['taquari_1_cota', 16,  'laj_t4h'],
+    // AMC (Antecedent Moisture Condition) — cotas de Lajeado em janelas longas
+    // proxy de encharcamento do solo pré-evento; captura o efeito da cheia anterior.
+    // Evento jul/2026b: mínimo pré-evento 12.91m vs 12.40m → +0.51m = solo mais encharcado.
+    ['taquari_1_cota', 48,  'laj_t12h'],  // 12h atrás
+    ['taquari_1_cota', 96,  'laj_t24h'],  // 24h atrás
+    ['taquari_1_cota', 192, 'laj_t48h'],  // 48h atrás — proxy AMC principal
 ];
 
 // Chuva acumulada nas cabeceiras (6h e 12h) como feature
@@ -114,8 +131,9 @@ echo "Leituras de Lajeado: " . count($tsLaj) . PHP_EOL;
 $X = [];
 $y = [];
 $feature_names = array_column($features_def, 2);
-$feature_names[] = 'chuva_6h';
-$feature_names[] = 'chuva_12h';
+$feature_names[] = 'chuva_24h';
+$feature_names[] = 'chuva_48h';
+$feature_names[] = 'chuva_72h';
 $feature_names[] = 'intercept';
 
 $skipped = 0;
@@ -144,23 +162,24 @@ foreach ($tsLaj as $ts) {
     }
     if (!$ok) { $skipped++; continue; }
 
-    // Chuva acumulada 6h e 12h nas cabeceiras
-    $chuva6h  = 0.0; $chuva12h = 0.0; $nch = 0;
+    // Chuva acumulada nas cabeceiras — janelas 24h, 48h e 72h.
+    // Evento jul/2026: 121.4mm/48h foi a janela mais correlacionada com o pico.
+    // Evento jul/2026b: chuva concentrada em 48h (72h ≈ 48h = 140mm).
+    $chuva24h = 0.0; $chuva48h = 0.0; $chuva72h = 0.0; $nch = 0;
     foreach ($estacoes_chuva as $eid) {
         if (!isset($series[$eid])) continue;
-        $soma6 = 0; $soma12 = 0;
-        for ($i = 1; $i <= 24; $i++) { // 24 passos = 6h
-            $soma6  += $series[$eid][$ts - $i * $step15] ?? 0;
-        }
-        for ($i = 1; $i <= 48; $i++) { // 48 passos = 12h
-            $soma12 += $series[$eid][$ts - $i * $step15] ?? 0;
-        }
-        $chuva6h  += $soma6;
-        $chuva12h += $soma12;
+        $s24 = 0.0; $s48 = 0.0; $s72 = 0.0;
+        for ($i = 1; $i <= 96;  $i++) $s24 += $series[$eid][$ts - $i * $step15] ?? 0; // 96×15min = 24h
+        for ($i = 1; $i <= 192; $i++) $s48 += $series[$eid][$ts - $i * $step15] ?? 0; // 192×15min = 48h
+        for ($i = 1; $i <= 288; $i++) $s72 += $series[$eid][$ts - $i * $step15] ?? 0; // 288×15min = 72h
+        $chuva24h += $s24;
+        $chuva48h += $s48;
+        $chuva72h += $s72;
         $nch++;
     }
-    $row[] = $nch > 0 ? $chuva6h / $nch  : 0.0;
-    $row[] = $nch > 0 ? $chuva12h / $nch : 0.0;
+    $row[] = $nch > 0 ? $chuva24h / $nch : 0.0;
+    $row[] = $nch > 0 ? $chuva48h / $nch : 0.0;
+    $row[] = $nch > 0 ? $chuva72h / $nch : 0.0;
     $row[] = 1.0; // intercept (bias)
 
     $X[]   = $row;
@@ -257,7 +276,7 @@ foreach ($imp as $name => $pct) {
 // ── Salva modelo em JSON ──────────────────────────────────────────────────────
 
 $model = [
-    'versao'        => '1.0',
+    'versao'        => '2.0',
     'treinado_em'   => date('Y-m-d H:i:s'),
     'horizonte_h'   => $horizonte_h,
     'n_amostras'    => $n,

@@ -41,6 +41,7 @@ return [
         ],
         'cota' => [
             'taquari_33_cota' => 'Barra do Fão',
+            'taquari_4_cota'  => 'Linha José Júlio',  // entre cabeceiras e Santa Tereza
             'taquari_32_cota' => 'Santa Tereza',
             'taquari_55_cota' => 'Linha Colombo',
             'taquari_3_cota'  => 'Muçum',
@@ -67,21 +68,33 @@ return [
         'janela_chuva_h'       => 6,
         // cotas de atenção (metros)
         'cota_atencao' => [
-            'taquari_1_cota'  => (float)($_ENV['COTA_ATENCAO_LAJEADO']       ?? 15.00),
-            'taquari_2_cota'  => (float)($_ENV['COTA_ATENCAO_ENCANTADO']     ??  9.00),
-            'taquari_3_cota'  => (float)($_ENV['COTA_ATENCAO_MUCUM']         ??  9.00),
-            'taquari_32_cota' => (float)($_ENV['COTA_ATENCAO_STA_TEREZA']    ??  9.00),
-            'taquari_33_cota' => (float)($_ENV['COTA_ATENCAO_BARRA_FAO']     ??  6.00),
-            'taquari_55_cota' => (float)($_ENV['COTA_ATENCAO_LINHA_COLOMBO'] ??  7.00),
+            'taquari_1_cota'  => (float)($_ENV['COTA_ATENCAO_LAJEADO']          ?? 15.00),
+            'taquari_2_cota'  => (float)($_ENV['COTA_ATENCAO_ENCANTADO']        ??  9.00),
+            'taquari_3_cota'  => (float)($_ENV['COTA_ATENCAO_MUCUM']            ??  9.00),
+            'taquari_4_cota'  => (float)($_ENV['COTA_ATENCAO_LJ_JULIO']         ??  5.00),
+            'taquari_32_cota' => (float)($_ENV['COTA_ATENCAO_STA_TEREZA']       ??  9.00),
+            'taquari_33_cota' => (float)($_ENV['COTA_ATENCAO_BARRA_FAO']        ??  6.00),
+            'taquari_55_cota' => (float)($_ENV['COTA_ATENCAO_LINHA_COLOMBO']    ??  7.00),
         ],
         // cotas de inundação (metros)
         'cota_inundacao' => [
-            'taquari_1_cota'  => (float)($_ENV['COTA_INUNDACAO_LAJEADO']       ?? 19.00),
-            'taquari_2_cota'  => (float)($_ENV['COTA_INUNDACAO_ENCANTADO']     ?? 12.00),
-            'taquari_3_cota'  => (float)($_ENV['COTA_INUNDACAO_MUCUM']         ?? 18.00),
-            'taquari_32_cota' => (float)($_ENV['COTA_INUNDACAO_STA_TEREZA']    ?? 15.00),
-            'taquari_33_cota' => (float)($_ENV['COTA_INUNDACAO_BARRA_FAO']     ?? 10.00),
-            'taquari_55_cota' => (float)($_ENV['COTA_INUNDACAO_LINHA_COLOMBO'] ?? 12.50),
+            'taquari_1_cota'  => (float)($_ENV['COTA_INUNDACAO_LAJEADO']          ?? 19.00),
+            'taquari_2_cota'  => (float)($_ENV['COTA_INUNDACAO_ENCANTADO']        ?? 12.00),
+            'taquari_3_cota'  => (float)($_ENV['COTA_INUNDACAO_MUCUM']            ?? 18.00),
+            'taquari_4_cota'  => (float)($_ENV['COTA_INUNDACAO_LJ_JULIO']         ??  8.00),
+            'taquari_32_cota' => (float)($_ENV['COTA_INUNDACAO_STA_TEREZA']       ?? 15.00),
+            'taquari_33_cota' => (float)($_ENV['COTA_INUNDACAO_BARRA_FAO']        ?? 10.00),
+            'taquari_55_cota' => (float)($_ENV['COTA_INUNDACAO_LINHA_COLOMBO']    ?? 12.50),
+        ],
+        // nível mínimo do leito (piso físico para previsões — atualizar com zero hidrométrico oficial)
+        'cota_minima_leito' => [
+            'taquari_1_cota'  => (float)($_ENV['COTA_MIN_LAJEADO']          ?? 12.00),
+            'taquari_2_cota'  => (float)($_ENV['COTA_MIN_ENCANTADO']        ??  0.50),
+            'taquari_3_cota'  => (float)($_ENV['COTA_MIN_MUCUM']            ??  1.00),
+            'taquari_4_cota'  => (float)($_ENV['COTA_MIN_LJ_JULIO']         ??  1.00),
+            'taquari_32_cota' => (float)($_ENV['COTA_MIN_STA_TEREZA']       ??  1.50),
+            'taquari_33_cota' => (float)($_ENV['COTA_MIN_BARRA_FAO']        ??  1.00),
+            'taquari_55_cota' => (float)($_ENV['COTA_MIN_LINHA_COLOMBO']    ??  1.00),
         ],
     ],
 
