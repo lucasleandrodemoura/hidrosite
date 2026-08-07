@@ -6,6 +6,7 @@
 
 # Dados e logs gerados em runtime
 /data/*.sqlite
+!/data/hidro.sqlite
 /logs/*.log
 
 # Backups gerados automaticamente (o backup inicial está em database/ e é versionado)

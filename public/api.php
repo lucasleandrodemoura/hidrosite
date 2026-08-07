@@ -113,11 +113,13 @@ function routeStatusAtual(\PDO $pdo, array $cfg): array
 {
     // Última leitura de cada estação
     $stmt = $pdo->query(
-        "SELECT DISTINCT ON (estacao_id)
-                l.estacao_id, e.nome, e.tipo, l.timestamp, l.valor, l.coletado_em
+        "SELECT l.estacao_id, e.nome, e.tipo, l.timestamp, l.valor, l.coletado_em
          FROM leituras l
          JOIN estacoes e ON e.id = l.estacao_id
-         ORDER BY l.estacao_id, l.timestamp DESC"
+         WHERE l.timestamp = (
+             SELECT MAX(l2.timestamp) FROM leituras l2 WHERE l2.estacao_id = l.estacao_id
+         )
+         ORDER BY l.estacao_id"
     );
     $rows = $stmt->fetchAll();
 
@@ -436,11 +438,13 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
     // Evento jul/2026b: AMC extra de +0.51m sobre o leito reduziu a "capacidade de absorção" da bacia.
     $amcFator = 1.0;
     $cotaMinima72h = $cotaAtual;
-    $stmtAmc = $pdo->query(
-        "SELECT MIN(valor::float) FROM leituras
+    $desde72h = date('Y-m-d H:i:s', strtotime('-72 hours'));
+    $stmtAmc = $pdo->prepare(
+        "SELECT MIN(valor) FROM leituras
          WHERE estacao_id = 'taquari_1_cota'
-           AND timestamp >= NOW() - INTERVAL '72 hours'"
+           AND timestamp >= :desde"
     );
+    $stmtAmc->execute([':desde' => $desde72h]);
     $cotaMinima72h = (float)($stmtAmc->fetchColumn() ?: $cotaAtual);
     // Excesso acima de 0.5m sobre o piso do leito indica bacia pré-saturada
     $excessoAMC = max(0.0, $cotaMinima72h - ($pisoLeito + 0.5));
@@ -551,20 +555,28 @@ function aplicarMLR(string $mlrFile, \PDO $pdo, float $cotaAtual): ?array
     $janelaHoras  = max($maxLagHoras, 72) + 4;         // 72h de chuva + 4h de folga
     $desde = date('Y-m-d H:i:s', time() - $janelaHoras * 3600);
     $stmt  = $pdo->prepare(
-        "SELECT estacao_id, tipo,
-                date_trunc('minute', timestamp) -
-                  (EXTRACT(MINUTE FROM timestamp)::int % 15) * INTERVAL '1 minute' AS ts_15,
-                AVG(valor::float) AS valor
+        "SELECT estacao_id, tipo, timestamp, valor
          FROM leituras
-         WHERE timestamp >= :desde
-         GROUP BY estacao_id, tipo, ts_15"
+         WHERE timestamp >= :desde"
     );
     $stmt->execute([':desde' => $desde]);
 
-    $series = [];
+    // Agrupa em buckets de 15min em PHP (portável entre SQLite e PostgreSQL,
+    // substituindo date_trunc/EXTRACT/INTERVAL específicos do Postgres).
+    $buckets = [];
     foreach ($stmt->fetchAll() as $r) {
-        $ts = strtotime($r['ts_15']);
-        $series[$r['estacao_id']][$ts] = (float)$r['valor'];
+        $ts15 = intdiv((int)strtotime($r['timestamp']), 900) * 900;
+        $key  = $r['estacao_id'] . '|' . $r['tipo'] . '|' . $ts15;
+        if (!isset($buckets[$key])) {
+            $buckets[$key] = ['estacao_id' => $r['estacao_id'], 'ts' => $ts15, 'soma' => 0.0, 'n' => 0];
+        }
+        $buckets[$key]['soma'] += (float)$r['valor'];
+        $buckets[$key]['n']++;
+    }
+
+    $series = [];
+    foreach ($buckets as $b) {
+        $series[$b['estacao_id']][$b['ts']] = $b['soma'] / $b['n'];
     }
 
     // Timestamp base: última leitura de Lajeado
