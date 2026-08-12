@@ -29,7 +29,7 @@
     "scripts": {
         "collect": "php cron/collect.php",
         "migrate": "php migrations/run.php",
-        "serve": "php -S localhost:8080 public/api.php"
+        "serve": "sh -c 'set -a; [ -f .env ] && . ./.env; set +a; php -S localhost:${APP_PORT:-8080} public/api.php'"
     },
     "config": {
         "optimize-autoloader": true
