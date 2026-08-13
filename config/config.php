@@ -20,7 +20,7 @@ return [
     ],
 
     'sgb' => [
-        'base_url' => $_ENV['SGB_BASE_URL'] ?? 'https://www.sgb.gov.br/sace/sace_nivel/api/dados/',
+        'base_url' => $_ENV['SGB_BASE_URL'] ?? 'https://sace.sgb.gov.br/api/dados/',
         'timeout'  => (int)($_ENV['SGB_TIMEOUT'] ?? 30),
     ],
 
