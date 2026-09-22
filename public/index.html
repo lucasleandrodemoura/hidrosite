@@ -3,23 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vale Taquari Tempo — Monitoramento de Cheias do Rio Taquari</title>
-  <meta name="description" content="Monitoramento hidrológico em tempo real do rio Taquari: cota, chuva e previsão de cheia para Lajeado, Estrela, Encantado, Muçum, Bom Retiro do Sul, Mariante e demais estações do Vale do Taquari (RS).">
-  <meta name="keywords" content="rio Taquari, cheia, enchente, cota do rio, Lajeado, Estrela, Encantado, Muçum, Bom Retiro do Sul, Mariante, Vale do Taquari, Rio Grande do Sul, monitoramento hidrológico, previsão de cheia">
+  <title>Nível do Rio Taquari Hoje e Alerta de Enchente | Vale Taquari Tempo</title>
+  <meta name="description" content="Nível do rio Taquari agora, atualizado a cada 30 min: cota, chuva e previsão de enchente para Lajeado, Estrela, Encantado, Muçum, Bom Retiro do Sul, Mariante e demais estações do Vale do Taquari (RS). Vai dar cheia? Veja o risco em tempo real.">
+  <meta name="keywords" content="nível do rio Taquari, enchente, cheia, vai dar enchente em Lajeado, cota do rio Taquari hoje, alerta de enchente, Lajeado, Estrela, Encantado, Muçum, Bom Retiro do Sul, Mariante, Vale do Taquari, Rio Grande do Sul, monitoramento hidrológico, previsão de cheia">
   <meta name="robots" content="index, follow">
   <meta name="author" content="Vale Taquari Tempo">
   <link rel="canonical" href="https://tempo.adevale.com.br/">
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Vale Taquari Tempo">
-  <meta property="og:title" content="Vale Taquari Tempo — Monitoramento de Cheias do Rio Taquari">
-  <meta property="og:description" content="Cota, chuva e previsão de cheia em tempo real para as estações do rio Taquari — Lajeado, Estrela, Encantado, Muçum, Bom Retiro do Sul, Mariante e mais.">
+  <meta property="og:title" content="Nível do Rio Taquari Hoje e Alerta de Enchente | Vale Taquari Tempo">
+  <meta property="og:description" content="Cota, chuva e previsão de enchente em tempo real para o rio Taquari — Lajeado, Estrela, Encantado, Muçum, Bom Retiro do Sul, Mariante e mais.">
   <meta property="og:url" content="https://tempo.adevale.com.br/">
   <meta property="og:locale" content="pt_BR">
 
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="Vale Taquari Tempo — Monitoramento de Cheias do Rio Taquari">
-  <meta name="twitter:description" content="Cota, chuva e previsão de cheia em tempo real para as estações do rio Taquari.">
+  <meta name="twitter:title" content="Nível do Rio Taquari Hoje e Alerta de Enchente | Vale Taquari Tempo">
+  <meta name="twitter:description" content="Cota, chuva e previsão de enchente em tempo real para o rio Taquari.">
 
   <script type="application/ld+json">
   {
@@ -27,8 +27,40 @@
     "@type": "WebSite",
     "name": "Vale Taquari Tempo",
     "url": "https://tempo.adevale.com.br/",
-    "description": "Monitoramento hidrológico em tempo real do rio Taquari: cota, chuva e previsão de cheia para as estações do Vale do Taquari (RS).",
+    "description": "Nível do rio Taquari em tempo real: cota, chuva e previsão de enchente para as estações do Vale do Taquari (RS).",
     "inLanguage": "pt-BR"
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Qual é o nível do rio Taquari agora?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "O Vale Taquari Tempo mostra a cota atual do rio Taquari em cada estação de monitoramento (Lajeado, Estrela, Encantado, Muçum, Bom Retiro do Sul, Mariante e outras), atualizada a cada 30 minutos com dados do SGB/CPRM."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Vai dar enchente em Lajeado?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "O painel exibe a cota atual de Lajeado, a tendência (subindo, baixando ou estável) e uma projeção de cota para as próximas 24 horas calibrada com o histórico de cheias, além do status de atenção ou cheia conforme os limiares oficiais."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Como funciona o alerta de cheia do Vale Taquari Tempo?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "O sistema coleta cota e chuva das estações do rio Taquari periodicamente e classifica cada estação como normal, em atenção ou em cheia com base nos limiares oficiais de cada ponto, exibindo isso no mapa e nos cards do painel."
+        }
+      }
+    ]
   }
   </script>
 
@@ -224,7 +256,7 @@
   <div class="logo">🌊</div>
   <div>
     <h1>Vale Taquari Tempo</h1>
-    <p>Monitoramento hidrológico — Bacia do Rio Taquari-Antas · Dados SGB/CPRM</p>
+    <p>Nível do rio Taquari e alerta de enchente em tempo real — Bacia do Rio Taquari-Antas · Dados SGB/CPRM</p>
   </div>
   <div class="badge-status">
     <div class="dot" id="dot-status"></div>
@@ -528,6 +560,19 @@
     </div>
     <div class="section-body" id="eventos-body">
       <p style="color:#aaa;font-size:.84rem">Carregando...</p>
+    </div>
+  </div>
+
+  <!-- PERGUNTAS FREQUENTES -->
+  <div class="section">
+    <div class="section-header"><span>❓</span> Perguntas frequentes</div>
+    <div class="section-body" style="font-size:.86rem;line-height:1.6;color:#333">
+      <p><strong>Qual é o nível do rio Taquari agora?</strong><br>
+      O Vale Taquari Tempo mostra a cota atual do rio Taquari em cada estação de monitoramento (Lajeado, Estrela, Encantado, Muçum, Bom Retiro do Sul, Mariante e outras), atualizada a cada 30 minutos com dados do SGB/CPRM.</p>
+      <p><strong>Vai dar enchente em Lajeado?</strong><br>
+      O painel exibe a cota atual de Lajeado, a tendência (subindo, baixando ou estável) e uma projeção de cota para as próximas 24 horas calibrada com o histórico de cheias, além do status de atenção ou cheia conforme os limiares oficiais.</p>
+      <p><strong>Como funciona o alerta de cheia do Vale Taquari Tempo?</strong><br>
+      O sistema coleta cota e chuva das estações do rio Taquari periodicamente e classifica cada estação como normal, em atenção ou em cheia com base nos limiares oficiais de cada ponto, exibindo isso no mapa e nos cards do painel.</p>
     </div>
   </div>
 
