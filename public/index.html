@@ -1077,6 +1077,32 @@ async function carregarGrafico() {
           fill: false,
           type: 'line',
         });
+
+        // Projeção das próximas 24h (só para a estação de Lajeado, um ponto por hora futura)
+        if (modalEstacaoId === 'taquari_1_cota') {
+          try {
+            const prev = await api('/previsao-lajeado');
+            if (prev.status !== 'sem_dados' && Array.isArray(prev.curva_horaria)) {
+              const ultimoPonto = { x: labels[labels.length - 1], y: values[values.length - 1] };
+              const pontosProjecao = prev.curva_horaria.map(p => ({
+                x: new Date(p.timestamp),
+                y: p.cota_projetada_m,
+              }));
+              datasets.push({
+                label: 'Projeção 24h',
+                data: [ultimoPonto, ...pontosProjecao],
+                borderColor: '#8e44ad',
+                borderDash: [3,3],
+                borderWidth: 2,
+                pointRadius: 0,
+                pointHoverRadius: 3,
+                fill: false,
+                tension: .25,
+                type: 'line',
+              });
+            }
+          } catch { /* projeção é complementar — falha não deve quebrar o gráfico principal */ }
+        }
       }
 
       chartType = 'line';
