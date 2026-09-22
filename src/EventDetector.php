@@ -73,8 +73,8 @@ class EventDetector
         // Abre evento
         $inicioTs = $this->primeiraChuvaRecente($desde);
         $this->pdo->prepare(
-            'INSERT INTO eventos (inicio_chuva, status) VALUES (:inicio, :status)'
-        )->execute([':inicio' => $inicioTs, ':status' => 'aberto']);
+            'INSERT INTO eventos (inicio_chuva, status, criado_em) VALUES (:inicio, :status, :criado)'
+        )->execute([':inicio' => $inicioTs, ':status' => 'aberto', ':criado' => date('Y-m-d H:i:s')]);
 
         $eventoId = (int)$this->pdo->lastInsertId();
         $this->log->info("Evento #{$eventoId} ABERTO", [

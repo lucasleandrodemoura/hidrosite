@@ -164,11 +164,14 @@ class Collector
 
         // Detecta driver pelo DSN da conexão
         $driver = $this->pdo->getAttribute(\PDO::ATTR_DRIVER_NAME);
+        // coletado_em é passado explicitamente (em vez do DEFAULT CURRENT_TIMESTAMP
+        // do banco, que é sempre UTC) pra ficar na mesma referência de horário de
+        // Brasília usada por leituras.timestamp — ver Bootstrap::init().
         $sql = $driver === 'pgsql'
-            ? 'INSERT INTO leituras (estacao_id, tipo, timestamp, valor)
-               VALUES (:estacao, :tipo, :ts, :val) ON CONFLICT (estacao_id, timestamp) DO NOTHING'
-            : 'INSERT OR IGNORE INTO leituras (estacao_id, tipo, timestamp, valor)
-               VALUES (:estacao, :tipo, :ts, :val)';
+            ? 'INSERT INTO leituras (estacao_id, tipo, timestamp, valor, coletado_em)
+               VALUES (:estacao, :tipo, :ts, :val, :coletado) ON CONFLICT (estacao_id, timestamp) DO NOTHING'
+            : 'INSERT OR IGNORE INTO leituras (estacao_id, tipo, timestamp, valor, coletado_em)
+               VALUES (:estacao, :tipo, :ts, :val, :coletado)';
 
         $stmt = $this->pdo->prepare($sql);
 
@@ -176,10 +179,11 @@ class Collector
         try {
             foreach ($linhas as $l) {
                 $stmt->execute([
-                    ':estacao' => $estacaoId,
-                    ':tipo'    => $tipo,
-                    ':ts'      => $l['timestamp'],
-                    ':val'     => $l['valor'],
+                    ':estacao'  => $estacaoId,
+                    ':tipo'     => $tipo,
+                    ':ts'       => $l['timestamp'],
+                    ':val'      => $l['valor'],
+                    ':coletado' => date('Y-m-d H:i:s'),
                 ]);
                 $novas += $stmt->rowCount();
             }
@@ -195,13 +199,14 @@ class Collector
     private function registrarLog(string $estacaoId, array $info): void
     {
         $this->pdo->prepare(
-            'INSERT INTO log_coleta (estacao_id, status, linhas_novas, erro)
-             VALUES (:est, :status, :novas, :erro)'
+            'INSERT INTO log_coleta (estacao_id, status, linhas_novas, erro, executado_em)
+             VALUES (:est, :status, :novas, :erro, :executado)'
         )->execute([
-            ':est'    => $estacaoId,
-            ':status' => $info['erro'] === null ? 'ok' : 'erro',
-            ':novas'  => $info['novas'],
-            ':erro'   => $info['erro'],
+            ':est'       => $estacaoId,
+            ':status'    => $info['erro'] === null ? 'ok' : 'erro',
+            ':novas'     => $info['novas'],
+            ':erro'      => $info['erro'],
+            ':executado' => date('Y-m-d H:i:s'),
         ]);
     }
 
