@@ -26,6 +26,8 @@ class Collector
      */
     public function coletarTodas(): array
     {
+        $this->garantirEstacoes();
+
         $resultado = [];
 
         foreach (['chuva', 'cota'] as $tipo) {
@@ -35,6 +37,22 @@ class Collector
         }
 
         return $resultado;
+    }
+
+    /** Garante que toda estação configurada existe na tabela estacoes (FK de leituras). */
+    private function garantirEstacoes(): void
+    {
+        $driver = $this->pdo->getAttribute(\PDO::ATTR_DRIVER_NAME);
+        $sql = $driver === 'pgsql'
+            ? 'INSERT INTO estacoes (id, nome, tipo) VALUES (:id, :nome, :tipo) ON CONFLICT (id) DO NOTHING'
+            : 'INSERT OR IGNORE INTO estacoes (id, nome, tipo) VALUES (:id, :nome, :tipo)';
+
+        $stmt = $this->pdo->prepare($sql);
+        foreach (['chuva', 'cota'] as $tipo) {
+            foreach ($this->cfg['estacoes'][$tipo] as $id => $nome) {
+                $stmt->execute([':id' => $id, ':nome' => $nome, ':tipo' => $tipo]);
+            }
+        }
     }
 
     /**

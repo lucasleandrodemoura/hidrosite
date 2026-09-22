@@ -43,7 +43,7 @@ class Projector
             ];
         }
 
-        $estacoesCfg   = array_keys($this->cfg['estacoes']['chuva']);
+        $estacoesCfg   = $this->cfg['estacoes']['chuva_cabeceira'];
         $mediaHipotetica = $this->calcularMediaEntrada($chuvaPorEstacao, $estacoesCfg);
         $cotaInundacao   = $this->cfg['evento']['cota_inundacao']['taquari_1_cota'];
 

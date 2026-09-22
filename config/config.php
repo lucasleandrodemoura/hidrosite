@@ -30,6 +30,7 @@ return [
      * Valor  → nome legível
      */
     'estacoes' => [
+        // Lista completa de postos de chuva coletados e exibidos no dashboard.
         'chuva' => [
             'taquari_9_chuva'  => 'Vacaria',
             'taquari_12_chuva' => 'Ibiraiaras',
@@ -38,6 +39,17 @@ return [
             'taquari_32_chuva' => 'Santa Tereza',
             'taquari_55_chuva' => 'Linha Colombo',
             'taquari_33_chuva' => 'Barra do Fão',
+            'taquari_5_chuva'  => 'Bom Retiro do Sul', // rio abaixo de Lajeado
+            'taquari_6_chuva'  => 'Mariante',           // rio abaixo de Bom Retiro do Sul
+        ],
+        // Subconjunto de estações de cabeceira usado no cálculo de chuva média
+        // (mediaCabeceira) que decide abertura/fechamento de evento de cheia e
+        // alimenta a razão histórica. Bom Retiro do Sul e Mariante ficam rio
+        // abaixo de Lajeado — chuva lá não antecede a cheia em Lajeado, por
+        // isso ficam fora desta lista mesmo estando em 'chuva' acima.
+        'chuva_cabeceira' => [
+            'taquari_9_chuva', 'taquari_12_chuva', 'taquari_31_chuva',
+            'taquari_54_chuva', 'taquari_32_chuva', 'taquari_55_chuva', 'taquari_33_chuva',
         ],
         'cota' => [
             'taquari_33_cota' => 'Barra do Fão',
@@ -47,6 +59,8 @@ return [
             'taquari_3_cota'  => 'Muçum',
             'taquari_2_cota'  => 'Encantado',
             'taquari_1_cota'  => 'Estrela/Lajeado',
+            'taquari_5_cota'  => 'Bom Retiro do Sul',
+            'taquari_6_cota'  => 'Mariante',
         ],
     ],
 
