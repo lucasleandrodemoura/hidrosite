@@ -301,10 +301,38 @@ function routeEventos(\PDO $pdo): array
     $stmt->execute($params);
     $eventos = $stmt->fetchAll();
 
+    $stmtPico = $pdo->prepare(
+        "SELECT valor, timestamp FROM leituras
+         WHERE estacao_id = :id AND tipo = 'cota' AND timestamp >= :inicio
+         ORDER BY valor DESC LIMIT 1"
+    );
+
     return [
         'total'   => count($eventos),
-        'eventos' => array_map(function ($e) {
+        'eventos' => array_map(function ($e) use ($stmtPico) {
             $e['chuva_acumulada_por_estacao'] = null; // omitido na listagem
+
+            // Evento ainda aberto: cota_maxima_* fica null no banco até o
+            // fechamento, mas o rio pode continuar subindo por dias. Calcula
+            // o pico ao vivo a partir das leituras, pra não exibir "—" ou um
+            // valor congelado enquanto a cheia ainda está em curso.
+            if ($e['status'] === 'aberto' && $e['inicio_chuva']) {
+                $mapa = [
+                    'cota_maxima_lajeado'   => ['taquari_1_cota', 'data_pico_lajeado'],
+                    'cota_maxima_mucum'     => ['taquari_3_cota', null],
+                    'cota_maxima_encantado' => ['taquari_2_cota', null],
+                ];
+                foreach ($mapa as $campo => [$estacaoId, $campoData]) {
+                    $stmtPico->execute([':id' => $estacaoId, ':inicio' => $e['inicio_chuva']]);
+                    $pico = $stmtPico->fetch();
+                    if ($pico) {
+                        $e[$campo] = (float)$pico['valor'];
+                        if ($campoData) $e[$campoData] = $pico['timestamp'];
+                    }
+                }
+                $e['cota_ao_vivo'] = true;
+            }
+
             foreach (['chuva_media_cabeceira','cota_maxima_lajeado','cota_maxima_mucum',
                       'cota_maxima_encantado','excesso_cota_lajeado','razao_calculada',
                       'defasagem_cabeceira_mucum_h','defasagem_mucum_encantado_h',

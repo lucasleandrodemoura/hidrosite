@@ -941,10 +941,10 @@ async function projetar() {
 // ── EVENTOS ───────────────────────────────────────────────────────────────────
 async function carregarEventos() {
   try {
-    const d = await api('/eventos?status=fechado&limite=10');
+    const d = await api('/eventos?status=todos&limite=10');
     const el = document.getElementById('eventos-body');
     if (!d.eventos?.length) {
-      el.innerHTML = `<p style="color:#aaa;font-size:.84rem">Nenhum episódio fechado ainda. O sistema registrará automaticamente ao detectar chuva acima do limiar seguida de recuo de nível.</p>`;
+      el.innerHTML = `<p style="color:#aaa;font-size:.84rem">Nenhum episódio registrado ainda. O sistema registrará automaticamente ao detectar chuva acima do limiar seguida de recuo de nível.</p>`;
       return;
     }
     let html = `<table class="ev-table"><thead><tr>
@@ -953,12 +953,15 @@ async function carregarEventos() {
     d.eventos.forEach(e => {
       const ini   = e.inicio_chuva ? new Date(e.inicio_chuva).toLocaleDateString('pt-BR') : '—';
       const chuva = e.chuva_media_cabeceira?.toFixed(1) ?? '—';
-      const cota  = e.cota_maxima_lajeado?.toFixed(2)  ?? '—';
+      const cotaAoVivo = e.status === 'aberto' && e.cota_ao_vivo;
+      const cota  = e.cota_maxima_lajeado != null
+        ? e.cota_maxima_lajeado.toFixed(2) + (cotaAoVivo ? ' m ⬆︎' : ' m')
+        : '—';
       const razao = e.razao_calculada?.toFixed(2)       ?? '—';
       const lag   = (e.defasagem_cabeceira_mucum_h && e.defasagem_mucum_encantado_h && e.defasagem_encantado_lajeado_h)
         ? (e.defasagem_cabeceira_mucum_h + e.defasagem_mucum_encantado_h + e.defasagem_encantado_lajeado_h).toFixed(0)+'h'
-        : '—';
-      html += `<tr><td>${ini}</td><td>${chuva} mm</td><td>${cota} m</td><td>${razao}</td><td>${lag}</td></tr>`;
+        : (e.status === 'aberto' ? 'em andamento' : '—');
+      html += `<tr${e.status === 'aberto' ? ' style="font-weight:600"' : ''}><td>${ini}</td><td>${chuva} mm</td><td>${cota}</td><td>${razao}</td><td>${lag}</td></tr>`;
     });
     html += '</tbody></table>';
     el.innerHTML = html;

@@ -118,6 +118,20 @@ class EventDetector
             ];
         }
 
+        // A chuva parou, mas tributários mais distantes (ex.: Barra do Fão, lag
+        // ~22h) podem ainda não ter chegado em Lajeado — o lag máximo upstream
+        // excede limiar_fechamento_h (12h por padrão). Fechar só por ausência de
+        // chuva trunca o pico real: cota_maxima_lajeado fica menor que o valor
+        // que o rio efetivamente atinge depois. Só fecha se a cota também já
+        // estiver em recessão.
+        if ($this->cotaAindaSubindo()) {
+            return [
+                'acao'   => 'aguardando',
+                'motivo' => 'chuva parou mas cota em Lajeado ainda em elevação, aguardando pico',
+                'evento' => $evento['id'],
+            ];
+        }
+
         // Fecha evento e calcula métricas
         return $this->fecharEvento($evento, $agoraTs);
     }
@@ -295,6 +309,34 @@ class EventDetector
         $row->execute([':desde' => $desde, ':limiar' => self::CHUVA_INSIGNIFICANTE_MM]);
         $ts = $row->fetchColumn();
         return $ts ?: date('Y-m-d H:i:s');
+    }
+
+    /**
+     * Compara a cota atual de Lajeado com a de ~3h atrás. Considera "ainda
+     * subindo" se a diferença ultrapassar uma margem de ruído (5cm) — evita
+     * fechar o evento em falso patamar por oscilação de leitura.
+     */
+    private function cotaAindaSubindo(): bool
+    {
+        $margemM = 0.05;
+
+        $stmt = $this->pdo->prepare(
+            "SELECT valor, timestamp FROM leituras
+             WHERE estacao_id = 'taquari_1_cota' AND tipo = 'cota'
+             ORDER BY timestamp DESC LIMIT 12"
+        );
+        $stmt->execute();
+        $leituras = $stmt->fetchAll();
+
+        if (count($leituras) < 2) {
+            return false; // sem dados suficientes, não bloqueia o fechamento
+        }
+
+        $maisRecente = (float)$leituras[0]['valor'];
+        $refIdx      = min(11, count($leituras) - 1); // ~3h atrás (leituras de 15min)
+        $referencia  = (float)$leituras[$refIdx]['valor'];
+
+        return ($maisRecente - $referencia) > $margemM;
     }
 
     /** Diferença em horas entre dois timestamps; null se algum for nulo. */
