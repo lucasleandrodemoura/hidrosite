@@ -15,6 +15,11 @@ class Bootstrap
     public static function init(): array
     {
         if (!self::$initialized) {
+            // Estações informam timestamps em horário de Brasília, sem conversão.
+            // PHP precisa da mesma referência pra date()/time()/strtotime() não
+            // ficarem 3h à frente do que está gravado em leituras.timestamp.
+            date_default_timezone_set('America/Sao_Paulo');
+
             $root = dirname(__DIR__);
 
             if (file_exists("{$root}/.env")) {

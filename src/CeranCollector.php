@@ -166,11 +166,14 @@ class CeranCollector
     private function salvar(array $linhas): int
     {
         $driver = $this->pdo->getAttribute(\PDO::ATTR_DRIVER_NAME);
+        // coletado_em explícito (não o DEFAULT CURRENT_TIMESTAMP do banco, que é
+        // UTC) pra ficar na mesma referência de horário de Brasília usada por
+        // leituras.timestamp — ver Bootstrap::init().
         $sql = $driver === 'pgsql'
-            ? 'INSERT INTO leituras (estacao_id, tipo, timestamp, valor)
-               VALUES (:est, :tipo, :ts, :val) ON CONFLICT (estacao_id, timestamp) DO NOTHING'
-            : 'INSERT OR IGNORE INTO leituras (estacao_id, tipo, timestamp, valor)
-               VALUES (:est, :tipo, :ts, :val)';
+            ? 'INSERT INTO leituras (estacao_id, tipo, timestamp, valor, coletado_em)
+               VALUES (:est, :tipo, :ts, :val, :coletado) ON CONFLICT (estacao_id, timestamp) DO NOTHING'
+            : 'INSERT OR IGNORE INTO leituras (estacao_id, tipo, timestamp, valor, coletado_em)
+               VALUES (:est, :tipo, :ts, :val, :coletado)';
 
         $stmt  = $this->pdo->prepare($sql);
         $novas = 0;
@@ -181,10 +184,11 @@ class CeranCollector
                 foreach (self::COLUNAS as $idx => $info) {
                     if (!isset($linha[$idx])) continue;
                     $stmt->execute([
-                        ':est'  => $info['id'],
-                        ':tipo' => $info['tipo'],
-                        ':ts'   => $linha['ts'],
-                        ':val'  => $linha[$idx],
+                        ':est'      => $info['id'],
+                        ':tipo'     => $info['tipo'],
+                        ':ts'       => $linha['ts'],
+                        ':val'      => $linha[$idx],
+                        ':coletado' => date('Y-m-d H:i:s'),
                     ]);
                     $novas += $stmt->rowCount();
                 }
