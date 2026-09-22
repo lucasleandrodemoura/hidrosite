@@ -10,6 +10,7 @@ declare(strict_types=1);
  *   GET  /leituras            → leituras recentes  ?horas=24 &estacao=X &tipo=cota
  *   GET  /eventos             → lista de eventos   ?status=fechado &limite=20
  *   GET  /razao-historica     → razão histórica + defasagens médias
+ *   GET  /previsao-lajeado    → projeção 24h em Lajeado + curva_horaria (1 ponto por hora futura)
  *   POST /projetar            → projeção de cota  body: JSON {chuva_por_estacao:{...}}
  *   POST /coletar             → dispara coleta manual (requer X-Admin-Token)
  *
@@ -300,10 +301,38 @@ function routeEventos(\PDO $pdo): array
     $stmt->execute($params);
     $eventos = $stmt->fetchAll();
 
+    $stmtPico = $pdo->prepare(
+        "SELECT valor, timestamp FROM leituras
+         WHERE estacao_id = :id AND tipo = 'cota' AND timestamp >= :inicio
+         ORDER BY valor DESC LIMIT 1"
+    );
+
     return [
         'total'   => count($eventos),
-        'eventos' => array_map(function ($e) {
+        'eventos' => array_map(function ($e) use ($stmtPico) {
             $e['chuva_acumulada_por_estacao'] = null; // omitido na listagem
+
+            // Evento ainda aberto: cota_maxima_* fica null no banco até o
+            // fechamento, mas o rio pode continuar subindo por dias. Calcula
+            // o pico ao vivo a partir das leituras, pra não exibir "—" ou um
+            // valor congelado enquanto a cheia ainda está em curso.
+            if ($e['status'] === 'aberto' && $e['inicio_chuva']) {
+                $mapa = [
+                    'cota_maxima_lajeado'   => ['taquari_1_cota', 'data_pico_lajeado'],
+                    'cota_maxima_mucum'     => ['taquari_3_cota', null],
+                    'cota_maxima_encantado' => ['taquari_2_cota', null],
+                ];
+                foreach ($mapa as $campo => [$estacaoId, $campoData]) {
+                    $stmtPico->execute([':id' => $estacaoId, ':inicio' => $e['inicio_chuva']]);
+                    $pico = $stmtPico->fetch();
+                    if ($pico) {
+                        $e[$campo] = (float)$pico['valor'];
+                        if ($campoData) $e[$campoData] = $pico['timestamp'];
+                    }
+                }
+                $e['cota_ao_vivo'] = true;
+            }
+
             foreach (['chuva_media_cabeceira','cota_maxima_lajeado','cota_maxima_mucum',
                       'cota_maxima_encantado','excesso_cota_lajeado','razao_calculada',
                       'defasagem_cabeceira_mucum_h','defasagem_mucum_encantado_h',
@@ -370,6 +399,7 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
 
     $deltaPonderado = 0.0;
     $detalhes       = [];
+    $stationRates   = []; // para construir a curva hora-a-hora abaixo
     $nContrib       = 0;
 
     foreach ($upstream as $id => $info) {
@@ -403,6 +433,12 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
             'defasagem_h'    => $info['lag_h'],
             'horas_uteis'    => $horasUteis,
             'contribuicao_m' => round($contrib, 3),
+        ];
+
+        $stationRates[$id] = [
+            'taxa_hora' => $taxaHora,
+            'peso'      => $info['peso'],
+            'lag_h'     => $info['lag_h'],
         ];
     }
 
@@ -478,6 +514,11 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
             if ($cotaProj >= $cfgInundacao) $situacao = 'cheia';
             elseif ($cotaProj >= $cfgAtencao) $situacao = 'atencao';
 
+            // Curva hora-a-hora: o modelo MLR só prevê o ponto fixo em +24h, então a
+            // trajetória intermediária é interpolada linearmente entre a cota atual
+            // e a cota projetada (não reflete subidas/descidas não-lineares no meio do caminho).
+            $curvaHoraria = construirCurvaHorariaInterpolada($cotaAtual, $cotaProj, $pisoLeito, 24);
+
             return [
                 'metodo'               => 'mlr_calibrado',
                 'cota_atual_m'         => $cotaAtual,
@@ -493,6 +534,8 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
                 'n_amostras_treino'    => $mlrResult['n_amostras'],
                 'treinado_em'          => $mlrResult['treinado_em'],
                 'estacoes_upstream'    => $detalhes,
+                'curva_horaria'        => $curvaHoraria,
+                'metodo_curva'         => 'interpolacao_linear',
                 'aviso'                => 'Previsão por Regressão Linear Múltipla com defasagens '
                                        . '(MLR-Lag). NSE=' . $mlrResult['metricas']['nse'] . '.',
             ];
@@ -512,6 +555,14 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
         default                            => 'insuficiente',
     };
 
+    // Curva hora-a-hora: distribui a contribuição de cada estação upstream ao
+    // longo das próximas 24h conforme sua defasagem (lag) até Lajeado — ou seja,
+    // extrapola a taxa de subida/descida observada em cada estação nas últimas
+    // leituras, respeitando quando ela efetivamente chega em Lajeado.
+    $curvaHoraria = construirCurvaHorariaHeuristica(
+        $stationRates, $cotaAtual, $pisoLeito, $deltaChuvaBruto, 24
+    );
+
     return [
         'metodo'                => $razaoMedia > 0 ? 'heuristico_com_razao' : 'heuristico',
         'cota_atual_m'          => $cotaAtual,
@@ -528,9 +579,79 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
         'confianca'             => $confianca,
         'n_estacoes_contrib'    => $nContrib,
         'estacoes_upstream'     => $detalhes,
+        'curva_horaria'         => $curvaHoraria,
+        'metodo_curva'          => 'extrapolacao_taxas_upstream',
         'aviso'                 => 'Estimativa heurística com fator AMC (solo encharcado). '
                                  . 'Execute scripts/train_mlr.php para ativar o modelo calibrado.',
     ];
+}
+
+/**
+ * Constrói a projeção hora a hora (1..$horas) a partir das taxas de subida/descida
+ * observadas em cada estação upstream, respeitando a defasagem (lag) de cada uma
+ * até chegar em Lajeado. A contribuição da chuva recente é distribuída
+ * proporcionalmente ao longo do horizonte.
+ *
+ * @param array $stationRates ['estacao_id' => ['taxa_hora'=>float,'peso'=>float,'lag_h'=>int]]
+ */
+function construirCurvaHorariaHeuristica(
+    array $stationRates,
+    float $cotaAtual,
+    float $pisoLeito,
+    float $deltaChuvaBruto,
+    int   $horas
+): array {
+    $agora  = time();
+    $pontos = [];
+
+    for ($h = 1; $h <= $horas; $h++) {
+        $delta = 0.0;
+        foreach ($stationRates as $r) {
+            // Só conta a parcela de horas já "chegada" em Lajeado até o instante h
+            $horasEfetivas = max(0, $h - $r['lag_h']);
+            $delta += $r['taxa_hora'] * $horasEfetivas * $r['peso'];
+        }
+        // Contribuição da chuva recente cresce proporcionalmente até o horizonte total
+        $delta += $deltaChuvaBruto * ($h / $horas);
+
+        $cota = max($cotaAtual + $delta, $pisoLeito);
+
+        $pontos[] = [
+            'hora'          => $h,
+            'timestamp'     => date('c', $agora + $h * 3600),
+            'cota_projetada_m' => round($cota, 3),
+        ];
+    }
+
+    return $pontos;
+}
+
+/**
+ * Constrói uma curva hora a hora por interpolação linear simples entre a cota
+ * atual e a cota projetada final — usada quando só existe um único ponto de
+ * previsão (ex.: modelo MLR calibrado para horizonte fixo de 24h).
+ */
+function construirCurvaHorariaInterpolada(
+    float $cotaAtual,
+    float $cotaFinal,
+    float $pisoLeito,
+    int   $horas
+): array {
+    $agora  = time();
+    $pontos = [];
+
+    for ($h = 1; $h <= $horas; $h++) {
+        $cota = $cotaAtual + ($cotaFinal - $cotaAtual) * ($h / $horas);
+        $cota = max($cota, $pisoLeito);
+
+        $pontos[] = [
+            'hora'              => $h,
+            'timestamp'         => date('c', $agora + $h * 3600),
+            'cota_projetada_m'  => round($cota, 3),
+        ];
+    }
+
+    return $pontos;
 }
 
 /**

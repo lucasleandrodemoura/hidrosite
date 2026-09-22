@@ -941,10 +941,10 @@ async function projetar() {
 // ── EVENTOS ───────────────────────────────────────────────────────────────────
 async function carregarEventos() {
   try {
-    const d = await api('/eventos?status=fechado&limite=10');
+    const d = await api('/eventos?status=todos&limite=10');
     const el = document.getElementById('eventos-body');
     if (!d.eventos?.length) {
-      el.innerHTML = `<p style="color:#aaa;font-size:.84rem">Nenhum episódio fechado ainda. O sistema registrará automaticamente ao detectar chuva acima do limiar seguida de recuo de nível.</p>`;
+      el.innerHTML = `<p style="color:#aaa;font-size:.84rem">Nenhum episódio registrado ainda. O sistema registrará automaticamente ao detectar chuva acima do limiar seguida de recuo de nível.</p>`;
       return;
     }
     let html = `<table class="ev-table"><thead><tr>
@@ -953,12 +953,15 @@ async function carregarEventos() {
     d.eventos.forEach(e => {
       const ini   = e.inicio_chuva ? new Date(e.inicio_chuva).toLocaleDateString('pt-BR') : '—';
       const chuva = e.chuva_media_cabeceira?.toFixed(1) ?? '—';
-      const cota  = e.cota_maxima_lajeado?.toFixed(2)  ?? '—';
+      const cotaAoVivo = e.status === 'aberto' && e.cota_ao_vivo;
+      const cota  = e.cota_maxima_lajeado != null
+        ? e.cota_maxima_lajeado.toFixed(2) + (cotaAoVivo ? ' m ⬆︎' : ' m')
+        : '—';
       const razao = e.razao_calculada?.toFixed(2)       ?? '—';
       const lag   = (e.defasagem_cabeceira_mucum_h && e.defasagem_mucum_encantado_h && e.defasagem_encantado_lajeado_h)
         ? (e.defasagem_cabeceira_mucum_h + e.defasagem_mucum_encantado_h + e.defasagem_encantado_lajeado_h).toFixed(0)+'h'
-        : '—';
-      html += `<tr><td>${ini}</td><td>${chuva} mm</td><td>${cota} m</td><td>${razao}</td><td>${lag}</td></tr>`;
+        : (e.status === 'aberto' ? 'em andamento' : '—');
+      html += `<tr${e.status === 'aberto' ? ' style="font-weight:600"' : ''}><td>${ini}</td><td>${chuva} mm</td><td>${cota}</td><td>${razao}</td><td>${lag}</td></tr>`;
     });
     html += '</tbody></table>';
     el.innerHTML = html;
@@ -1077,6 +1080,39 @@ async function carregarGrafico() {
           fill: false,
           type: 'line',
         });
+
+        // Projeção das próximas 24h — uma linha por estação, com base na
+        // tendência de subida/descida observada nas leituras recentes dela.
+        // Para Lajeado usa o modelo mais completo do backend (considera as
+        // estações upstream, chuva e encharcamento do solo); para as demais,
+        // extrapola localmente a taxa de variação da própria série.
+        try {
+          let pontosProjecao;
+          if (modalEstacaoId === 'taquari_1_cota') {
+            const prev = await api('/previsao-lajeado');
+            pontosProjecao = (prev.status !== 'sem_dados' && Array.isArray(prev.curva_horaria))
+              ? prev.curva_horaria.map(p => ({ x: new Date(p.timestamp), y: p.cota_projetada_m }))
+              : null;
+          } else {
+            pontosProjecao = construirProjecaoLocal(serie);
+          }
+
+          if (pontosProjecao && pontosProjecao.length) {
+            const ultimoPonto = { x: labels[labels.length - 1], y: values[values.length - 1] };
+            datasets.push({
+              label: 'Projeção 24h',
+              data: [ultimoPonto, ...pontosProjecao],
+              borderColor: '#8e44ad',
+              borderDash: [3,3],
+              borderWidth: 2,
+              pointRadius: 0,
+              pointHoverRadius: 3,
+              fill: false,
+              tension: .25,
+              type: 'line',
+            });
+          }
+        } catch { /* projeção é complementar — falha não deve quebrar o gráfico principal */ }
       }
 
       chartType = 'line';
@@ -1162,6 +1198,35 @@ async function carregarGrafico() {
   } catch(e) {
     document.getElementById('modal-loading').textContent = 'Erro ao carregar dados: ' + e.message;
   }
+}
+
+// Extrapola a tendência recente de uma estação para as próximas 24h: compara
+// a leitura mais recente com uma de até ~1h atrás para estimar a taxa de
+// subida/descida (unidade/h) e projeta 24 pontos, um por hora futura.
+function construirProjecaoLocal(serie) {
+  if (serie.length < 2) return null;
+
+  const recentes     = serie.slice(-8); // até 8 últimas leituras (≈2h se 15min/leitura)
+  const maisRecente   = recentes[recentes.length - 1];
+  const refIdx        = Math.max(0, recentes.length - 1 - 4);
+  const referencia     = recentes[refIdx];
+
+  const valorAtual     = parseFloat(maisRecente.valor);
+  const valorRef       = parseFloat(referencia.valor);
+  const horasIntervalo = (new Date(maisRecente.ts) - new Date(referencia.ts)) / 3600000;
+  if (horasIntervalo < 0.1) return null;
+
+  const taxaHora = (valorAtual - valorRef) / horasIntervalo;
+  const agora    = new Date(maisRecente.ts).getTime();
+
+  const pontos = [];
+  for (let h = 1; h <= 24; h++) {
+    pontos.push({
+      x: new Date(agora + h * 3600000),
+      y: Math.max(0, valorAtual + taxaHora * h),
+    });
+  }
+  return pontos;
 }
 
 // ── FETCH HELPER ──────────────────────────────────────────────────────────────

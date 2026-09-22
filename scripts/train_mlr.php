@@ -96,23 +96,27 @@ $estacoes_chuva = [
 
 echo "Carregando dados..." . PHP_EOL;
 
-// Todas as estações de cota + chuva, por timestamp, em série contínua
-$stmt = $pdo->query(
-    "SELECT estacao_id, tipo,
-            date_trunc('minute', timestamp) -
-              (EXTRACT(MINUTE FROM timestamp)::int % 15) * INTERVAL '1 minute' AS ts_15,
-            AVG(valor::float) AS valor
-     FROM leituras
-     GROUP BY estacao_id, tipo, ts_15
-     ORDER BY ts_15"
-);
-$rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+// Todas as estações de cota + chuva, por timestamp, em série contínua.
+// Bucketiza em PHP (portável entre SQLite e PostgreSQL) em vez de usar
+// date_trunc/EXTRACT/INTERVAL, que só existem no Postgres — mesma técnica
+// já usada por aplicarMLR() em public/api.php.
+$stmt = $pdo->query("SELECT estacao_id, tipo, timestamp, valor FROM leituras");
+
+$buckets = [];
+foreach ($stmt as $r) {
+    $ts15 = intdiv((int)strtotime($r['timestamp']), 900) * 900;
+    $key  = $r['estacao_id'] . '|' . $ts15;
+    if (!isset($buckets[$key])) {
+        $buckets[$key] = ['estacao_id' => $r['estacao_id'], 'ts' => $ts15, 'soma' => 0.0, 'n' => 0];
+    }
+    $buckets[$key]['soma'] += (float)$r['valor'];
+    $buckets[$key]['n']++;
+}
 
 // Organiza em: $series[estacao_id][timestamp_unix] = valor
 $series = [];
-foreach ($rows as $r) {
-    $ts = strtotime($r['ts_15']);
-    $series[$r['estacao_id']][$ts] = (float)$r['valor'];
+foreach ($buckets as $b) {
+    $series[$b['estacao_id']][$b['ts']] = $b['soma'] / $b['n'];
 }
 
 $nSeries = count($series);
