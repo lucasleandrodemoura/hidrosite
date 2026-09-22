@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /coletar
+
+Sitemap: https://tempo.adevale.com.br/sitemap.xml
