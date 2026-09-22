@@ -92,7 +92,10 @@ function routeStatus(array $cfg, \PDO $pdo): array
 {
     $nLeituras = $pdo->query('SELECT COUNT(*) FROM leituras')->fetchColumn();
     $nEventos  = $pdo->query("SELECT COUNT(*) FROM eventos WHERE status='fechado'")->fetchColumn();
-    $ultima    = $pdo->query('SELECT MAX(coletado_em) FROM leituras')->fetchColumn();
+    // Usa o último id inserido, não MAX(coletado_em): linhas antigas gravadas
+    // antes da correção de timezone (UTC em vez de America/Sao_Paulo) têm
+    // coletado_em maior como string e venceriam o MAX de forma incorreta.
+    $ultima    = $pdo->query('SELECT coletado_em FROM leituras ORDER BY id DESC LIMIT 1')->fetchColumn();
 
     return [
         'sistema'        => 'Vale Taquari Tempo – Coletor Hidrológico SGB',
