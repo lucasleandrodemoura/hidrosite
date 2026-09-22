@@ -89,6 +89,8 @@ return [
             'taquari_32_cota' => (float)($_ENV['COTA_ATENCAO_STA_TEREZA']       ??  9.00),
             'taquari_33_cota' => (float)($_ENV['COTA_ATENCAO_BARRA_FAO']        ??  6.00),
             'taquari_55_cota' => (float)($_ENV['COTA_ATENCAO_LINHA_COLOMBO']    ??  7.00),
+            'taquari_5_cota'  => (float)($_ENV['COTA_ATENCAO_BOM_RETIRO_SUL']   ?? 12.00),
+            'taquari_6_cota'  => (float)($_ENV['COTA_ATENCAO_MARIANTE']         ?? 11.00),
         ],
         // cotas de inundação (metros)
         'cota_inundacao' => [
@@ -99,6 +101,8 @@ return [
             'taquari_32_cota' => (float)($_ENV['COTA_INUNDACAO_STA_TEREZA']       ?? 15.00),
             'taquari_33_cota' => (float)($_ENV['COTA_INUNDACAO_BARRA_FAO']        ?? 10.00),
             'taquari_55_cota' => (float)($_ENV['COTA_INUNDACAO_LINHA_COLOMBO']    ?? 12.50),
+            'taquari_5_cota'  => (float)($_ENV['COTA_INUNDACAO_BOM_RETIRO_SUL']   ?? 16.50),
+            'taquari_6_cota'  => (float)($_ENV['COTA_INUNDACAO_MARIANTE']         ?? 14.00),
         ],
         // nível mínimo do leito (piso físico para previsões — atualizar com zero hidrométrico oficial)
         'cota_minima_leito' => [
