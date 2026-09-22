@@ -512,7 +512,15 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
     $mlrFile = __DIR__ . '/../data/mlr_coefs.json';
     if (file_exists($mlrFile)) {
         $mlrResult = aplicarMLR($mlrFile, $pdo, $cotaAtual);
-        if ($mlrResult !== null) {
+        // Guarda de plausibilidade: o treino só viu 3 eventos de cheia, cobertura
+        // rasa de trajetórias extremas de cota. Fora da faixa vista no treino, a
+        // regressão linear extrapola mal (chegou a projetar -10m/24h num teste
+        // real em cheia). Se o delta previsto passar de ~5x o RMSE de treino, é
+        // sinal de extrapolação — não confia no ponto, cai pro heurístico.
+        $mlrPlausivel = $mlrResult !== null
+            && abs($mlrResult['cota_projetada'] - $cotaAtual) <= 5 * $mlrResult['metricas']['rmse'];
+
+        if ($mlrResult !== null && $mlrPlausivel) {
             $cotaProj = max($mlrResult['cota_projetada'], $pisoLeito);
             $situacao = 'normal';
             if ($cotaProj >= $cfgInundacao) $situacao = 'cheia';
@@ -585,8 +593,15 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
         'estacoes_upstream'     => $detalhes,
         'curva_horaria'         => $curvaHoraria,
         'metodo_curva'          => 'extrapolacao_taxas_upstream',
-        'aviso'                 => 'Estimativa heurística com fator AMC (solo encharcado). '
-                                 . 'Execute scripts/train_mlr.php para ativar o modelo calibrado.',
+        'mlr_rejeitado_extrapolacao' => isset($mlrResult) && $mlrResult !== null && !$mlrPlausivel,
+        'aviso'                 => (isset($mlrResult) && $mlrResult !== null && !$mlrPlausivel)
+            ? sprintf(
+                'Modelo MLR previu delta de %.2fm/24h, fora da faixa plausível (>5x RMSE de treino) — '
+                . 'provável extrapolação fora do que o treino viu. Usando heurístico como salvaguarda.',
+                $mlrResult['cota_projetada'] - $cotaAtual
+              )
+            : 'Estimativa heurística com fator AMC (solo encharcado). '
+              . 'Execute scripts/train_mlr.php para ativar o modelo calibrado.',
     ];
 }
 
