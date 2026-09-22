@@ -66,6 +66,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 try {
     $response = match (true) {
         $method === 'GET'  && $path === '/'                 => routeStatus($cfg, $pdo),
+        $method === 'GET'  && $path === '/status'           => routeStatus($cfg, $pdo),
         $method === 'GET'  && $path === '/status-atual'     => routeStatusAtual($pdo, $cfg),
         $method === 'GET'  && $path === '/leituras'         => routeLeituras($pdo),
         $method === 'GET'  && $path === '/eventos'          => routeEventos($pdo),

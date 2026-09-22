@@ -619,7 +619,7 @@ async function init() {
 // ── STATUS ────────────────────────────────────────────────────────────────────
 async function carregarStatus() {
   try {
-    const [d, r] = await Promise.all([api('/'), api('/razao-historica')]);
+    const [d, r] = await Promise.all([api('/status'), api('/razao-historica')]);
     document.getElementById('m-leituras').textContent = d.leituras_total?.toLocaleString('pt-BR') ?? '—';
     document.getElementById('m-eventos').textContent  = d.eventos_fechados ?? '0';
     const ts = d.ultima_coleta ? new Date(d.ultima_coleta).toLocaleString('pt-BR') : '—';
