@@ -220,6 +220,56 @@ Defasagens entre estações upstream e Lajeado usadas no heurístico de previsã
 foram recalibradas por correlação cruzada (Pearson) sobre todo o histórico de
 leituras coletado, não apenas observação visual de um único evento.
 
+### Previsibilidade e incerteza em previsão de cheias
+
+Literatura de referência dos hidrólogos mais citados na área de previsão e
+quantificação de incerteza em hidrologia, consultada como base conceitual
+(nem tudo aqui já está implementado no projeto — ver observações):
+
+- **Beven, K.; Binley, A. (1992).** "The future of distributed models: model
+  calibration and uncertainty prediction." *Hydrological Processes*, 6(3),
+  279-298. — introduz o GLUE; formaliza a equifinalidade (vários conjuntos de
+  parâmetros reproduzem igualmente bem a vazão observada), por isso previsão
+  confiável exige quantificar incerteza, não só ajustar "o melhor" parâmetro.
+- **Gupta, H.V.; Kling, H.; Yilmaz, K.K.; Martinez, G.F. (2009).**
+  "Decomposition of the mean squared error and NSE performance criteria."
+  *Journal of Hydrology*, 377(1-2), 80-91. — origina o KGE (Kling-Gupta
+  Efficiency), hoje padrão pra avaliar modelo hidrológico, mais robusto que o
+  NSE isolado (única métrica usada hoje em `scripts/train_mlr.php`).
+- **Sivapalan, M.; Takeuchi, K.; Franks, S.W.; et al. (2003).** "IAHS Decade
+  on Predictions in Ungauged Basins (PUB), 2003–2012." *Hydrological
+  Sciences Journal*, 48(6), 857-880. — lança a iniciativa PUB da IAHS,
+  relevante pra qualquer tributário sem série longa de dados.
+- **Hrachowitz, M.; Savenije, H.H.G.; Blöschl, G.; et al. (2013).** "A decade
+  of Predictions in Ungauged Basins (PUB)—a review." *Hydrological Sciences
+  Journal*, 58(6), 1198-1255. — revisão de fechamento da PUB: previsão de
+  cheia é sistematicamente menos precisa em bacias pequenas, contexto pras
+  estações menores da bacia do Taquari.
+- **Todini, E. (2008).** "A model conditional processor to assess predictive
+  uncertainty in flood forecasting." *International Journal of River Basin
+  Management*, 6(2), 123-137. — referência central em previsão probabilística
+  de cheia em tempo real (testado no rio Po, Itália).
+- **Todini, E. (2017).** "Flood Forecasting and Decision Making in the new
+  Millennium. Where are We?" *Water Resources Management*, 31, 3111-3129. —
+  panorama do estado da arte em previsão de cheia.
+- **Duan, Q.; Sorooshian, S.; Gupta, V. (1992).** "Effective and efficient
+  global optimization for conceptual rainfall-runoff models." *Water
+  Resources Research*, 28(4), 1015-1031. — introduz o SCE-UA, método de
+  calibração automática padrão pra modelos chuva-vazão; relevante pra
+  recalibração futura do MLR/heurístico do projeto.
+- **Vrugt, J.A.; ter Braak, C.J.F.; Gupta, H.V.; Robinson, B.A. (2009).**
+  "Equifinality of formal (DREAM) and informal (GLUE) Bayesian approaches in
+  hydrologic modeling?" *Stochastic Environmental Research and Risk
+  Assessment*, 23(7), 1011-1026. — compara calibração bayesiana formal
+  (DREAM) com GLUE (Beven, acima).
+- **Fan, F.M.; Schwanenberg, D.; Collischonn, W.; Weerts, A. (2015).**
+  "Verification of inflow into hydropower reservoirs using ensemble
+  forecasts of the TIGGE database for large scale basins in Brazil."
+  *Journal of Hydrology: Regional Studies*, 4(B), 196-227. — extensão da
+  linhagem Collischonn/Tucci (já citada acima) pra previsão por conjunto em
+  bacias brasileiras, o parente metodológico mais próximo do problema do
+  Taquari.
+
 ---
 
 ## Licença
