@@ -370,16 +370,21 @@ function routeRazao(\PDO $pdo, array $cfg): array
 function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
 {
     $pisoLeito = $cfg['evento']['cota_minima_leito']['taquari_1_cota'] ?? 12.00;
-    // Defasagens medidas empiricamente no evento de 22-23/07/2026 (pico-a-pico vs Lajeado).
-    // Encantado: cross-correlação 2.8h (pico suspeito no BD). Demais: pico-a-pico observado.
-    // Pesos estimados pela importância hidrológica relativa de cada tributário.
+    $pisos     = $cfg['evento']['cota_minima_leito'];
+    // Defasagens recalibradas por correlação cruzada (Pearson, todo o histórico
+    // de leituras, ~8600 buckets de 15min) entre cada estação e Lajeado —
+    // substituem os valores anteriores, medidos visualmente num único evento
+    // (jul/2026), que estavam superestimados em 2-2,7x. Encantado mantido em 3h
+    // (correlação mais baixa e achatada, 0,60, possível efeito de remanso do
+    // próprio reservatório de Lajeado, não erro de lag). Pesos ainda vêm da
+    // mesma estimativa visual original — não recalibrados nesta rodada.
     $upstream = [
-        'taquari_2_cota'  => ['nome' => 'Encantado',         'lag_h' => 3,  'peso' => 0.45],
-        'taquari_3_cota'  => ['nome' => 'Muçum',             'lag_h' => 11, 'peso' => 0.30],
-        'taquari_32_cota' => ['nome' => 'Santa Tereza',      'lag_h' => 13, 'peso' => 0.10],
-        'taquari_4_cota'  => ['nome' => 'Linha José Júlio',  'lag_h' => 16, 'peso' => 0.08],
-        'taquari_55_cota' => ['nome' => 'Linha Colombo',     'lag_h' => 20, 'peso' => 0.04],
-        'taquari_33_cota' => ['nome' => 'Barra do Fão',      'lag_h' => 22, 'peso' => 0.03],
+        'taquari_2_cota'  => ['nome' => 'Encantado',         'lag_h' => 3,     'peso' => 0.45],
+        'taquari_3_cota'  => ['nome' => 'Muçum',             'lag_h' => 4.5,   'peso' => 0.30],
+        'taquari_32_cota' => ['nome' => 'Santa Tereza',      'lag_h' => 5.5,   'peso' => 0.10],
+        'taquari_4_cota'  => ['nome' => 'Linha José Júlio',  'lag_h' => 6,     'peso' => 0.08],
+        'taquari_55_cota' => ['nome' => 'Linha Colombo',     'lag_h' => 11.25, 'peso' => 0.04],
+        'taquari_33_cota' => ['nome' => 'Barra do Fão',      'lag_h' => 13.25, 'peso' => 0.03],
     ];
 
     // Cota atual e taxa de Lajeado
@@ -417,12 +422,14 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
         $delta       = $maisRecente - $referencia;
         $intervaloH  = (strtotime($leituras[0]['timestamp']) - strtotime($leituras[$refIdx]['timestamp'])) / 3600;
         $taxaHora    = $intervaloH > 0.1 ? $delta / $intervaloH : 0.0;
+        $piso        = $pisos[$id] ?? 0.0;
+        $excesso0    = max(0.0, $maisRecente - $piso);
 
         // Horas dentro da janela de 24h que ainda vão impactar Lajeado
         $horasUteis = max(0, 24 - $info['lag_h']);
 
         // Contribuição delta ponderada pelo peso da estação
-        $contrib = $taxaHora * $horasUteis * $info['peso'];
+        $contrib = contribuicaoUpstream($taxaHora, $excesso0, $horasUteis, $info['peso']);
         $deltaPonderado += $contrib;
         $nContrib++;
 
@@ -443,6 +450,7 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
             'taxa_hora' => $taxaHora,
             'peso'      => $info['peso'],
             'lag_h'     => $info['lag_h'],
+            'excesso0'  => $excesso0,
         ];
     }
 
@@ -606,12 +614,57 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
 }
 
 /**
+ * Decaimento exponencial bifásico do excesso de cota acima do piso do leito,
+ * calibrado por regressão log-linear na recessão dos 2 eventos fechados de
+ * Lajeado (jul/2026): k_early nas primeiras 48h após o pico (escoamento
+ * superficial/interflow, R²>0,94), k_late depois (baseflow, decaimento bem
+ * mais lento). Referência: Tallaksen, L.M. (1995) "A review of baseflow
+ * recession analysis", Journal of Hydrology v.165 — recessão de bacia
+ * tipicamente multi-segmento, não uma exponencial única.
+ */
+function excessoDecaido(float $excesso0, float $horas): float
+{
+    $kEarly = 0.0407;
+    $kLate  = 0.0059;
+    $corteH = 48.0;
+
+    if ($horas <= 0) return $excesso0;
+    if ($horas <= $corteH) return $excesso0 * exp(-$kEarly * $horas);
+
+    $noCorte = $excesso0 * exp(-$kEarly * $corteH);
+    return $noCorte * exp(-$kLate * ($horas - $corteH));
+}
+
+/**
+ * Contribuição de uma estação upstream pra cota de Lajeado depois de
+ * $horasEfetivas (já descontada a defasagem/lag até chegar em Lajeado).
+ *
+ * Em recessão (taxa negativa, sem chuva nova chegando), usa o decaimento
+ * exponencial de excessoDecaido() em vez de extrapolar a taxa instantânea
+ * linearmente pra sempre — é o que causava projeções fisicamente implausíveis
+ * (ex.: uma queda observada de -0,5m/h "esticada" por 20h viraria -10m).
+ * Subindo/estável, mantém a extrapolação linear: a subida é dominada por
+ * chuva recente ainda chegando, sem um modelo de recessão aplicável.
+ */
+function contribuicaoUpstream(float $taxaHora, float $excesso0, float $horasEfetivas, float $peso): float
+{
+    if ($horasEfetivas <= 0) return 0.0;
+
+    if ($taxaHora < -0.005 && $excesso0 > 0.05) {
+        $delta = excessoDecaido($excesso0, $horasEfetivas) - $excesso0;
+        return $delta * $peso;
+    }
+
+    return $taxaHora * $horasEfetivas * $peso;
+}
+
+/**
  * Constrói a projeção hora a hora (1..$horas) a partir das taxas de subida/descida
  * observadas em cada estação upstream, respeitando a defasagem (lag) de cada uma
  * até chegar em Lajeado. A contribuição da chuva recente é distribuída
  * proporcionalmente ao longo do horizonte.
  *
- * @param array $stationRates ['estacao_id' => ['taxa_hora'=>float,'peso'=>float,'lag_h'=>int]]
+ * @param array $stationRates ['estacao_id' => ['taxa_hora'=>float,'peso'=>float,'lag_h'=>float,'excesso0'=>float]]
  */
 function construirCurvaHorariaHeuristica(
     array $stationRates,
@@ -628,7 +681,7 @@ function construirCurvaHorariaHeuristica(
         foreach ($stationRates as $r) {
             // Só conta a parcela de horas já "chegada" em Lajeado até o instante h
             $horasEfetivas = max(0, $h - $r['lag_h']);
-            $delta += $r['taxa_hora'] * $horasEfetivas * $r['peso'];
+            $delta += contribuicaoUpstream($r['taxa_hora'], $r['excesso0'], $horasEfetivas, $r['peso']);
         }
         // Contribuição da chuva recente cresce proporcionalmente até o horizonte total
         $delta += $deltaChuvaBruto * ($h / $horas);
