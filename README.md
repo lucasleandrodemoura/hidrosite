@@ -193,6 +193,35 @@ Em situação de risco, siga sempre as orientações dos órgãos competentes.
 
 ---
 
+## Referências bibliográficas
+
+A calibração da projeção de cota (defasagem entre estações, recessão de cheia,
+razão chuva/cota) se baseia em:
+
+- **Tallaksen, L.M. (1995).** "A review of baseflow recession analysis."
+  *Journal of Hydrology*, v.165, p.349-370. — recessão de cheia multi-segmento
+  (decaimento exponencial bifásico), base do modelo de recessão usado na
+  previsão de 24h em Lajeado.
+- **Collischonn, W.; Tucci, C.E.M. (2001).** "Simulação Hidrológica de Grandes
+  Bacias." *Revista Brasileira de Recursos Hídricos (RBRH)*, v.6, n.1, p.95-118.
+  — trabalho fundacional do modelo MGB-IPH, referência para a razão
+  chuva/excesso-de-cota calibrada por eventos históricos.
+- **Chow, V.T. (1988).** *Applied Hydrology.* McGraw-Hill. — hidrograma
+  unitário e fundamentos de roteamento de cheia.
+- **Linsley, R.K.; Kohler, M.A.; Paulhus, J.L.H.** *Hydrology for Engineers.*
+  McGraw-Hill. — curva de recessão e análise de hidrograma, referência
+  clássica complementar a Tallaksen (1995).
+- **Método de Muskingum-Cunge** (roteamento de cheia baseado em celeridade de
+  onda cinemática, parâmetros K e X) — considerado como possível terceira via
+  de calibração, complementar ao modelo estatístico (MLR) e ao heurístico
+  atuais; ainda não implementado.
+
+Defasagens entre estações upstream e Lajeado usadas no heurístico de previsão
+foram recalibradas por correlação cruzada (Pearson) sobre todo o histórico de
+leituras coletado, não apenas observação visual de um único evento.
+
+---
+
 ## Licença
 
 [Vale Taquari Tempo Open License v1.0](LICENSE) — uso não-comercial, compartilhamento obrigatório.

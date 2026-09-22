@@ -584,6 +584,8 @@
   &nbsp;|&nbsp;
   <a href="https://github.com/lucasleandrodemoura/hidrosite/blob/main/LICENSE" target="_blank">Vale Taquari Tempo Open License v1.0</a>
   — uso não-comercial, melhorias devem ser compartilhadas &nbsp;|&nbsp;
+  <a href="https://github.com/lucasleandrodemoura/hidrosite#referências-bibliográficas" target="_blank">Referências bibliográficas</a>
+  &nbsp;|&nbsp;
   ⚠️ Projeções são estimativas — consulte a <strong>Defesa Civil do RS</strong> em situações de risco
 </footer>
 
@@ -1373,7 +1375,7 @@ async function coletarAgora() {
     );
 
     // Atualiza os dados na tela
-    await Promise.all([carregarStatusAtual(), carregarStatus()]);
+    await Promise.all([carregarStatusAtual(), carregarStatus(), carregarEventos()]);
 
   } catch(e) {
     mostrarToast('Erro na coleta: ' + e.message, 'erro');
@@ -1394,8 +1396,10 @@ function mostrarToast(msg, tipo = 'ok') {
 }
 
 // ── START ─────────────────────────────────────────────────────────────────────
+// Autoatualização: dispara coleta (busca dado novo no SGB) e recarrega status,
+// cards, mapa, previsão 24h e episódios de cheia — tudo a cada 15 minutos, sem
+// precisar recarregar a página.
 init();
-setInterval(() => { carregarStatusAtual(); carregarStatus(); }, 5 * 60 * 1000);
 setInterval(coletarAgora, 15 * 60 * 1000);
 </script>
 </body>
