@@ -55,7 +55,7 @@ class EventDetector
         $desde     = date('Y-m-d H:i:s', strtotime("-{$janelaH} hours"));
 
         $acumulados = $this->chuvaAcumuladaPorEstacao($desde, date('Y-m-d H:i:s'));
-        $estacoesChuva = array_keys($this->cfg['estacoes']['chuva']);
+        $estacoesChuva = $this->cfg['estacoes']['chuva_cabeceira'];
 
         if (empty($acumulados)) {
             return ['acao' => 'nenhuma', 'motivo' => 'sem leituras de chuva'];
@@ -108,7 +108,7 @@ class EventDetector
         // Verifica se houve chuva nas últimas LIMIAR_FECHAMENTO_H horas
         $desde = date('Y-m-d H:i:s', strtotime("-{$fechaH} hours"));
         $chuvaRecente = $this->chuvaAcumuladaPorEstacao($desde, $agoraTs);
-        $mediaRecente = $this->mediaCabeceira($chuvaRecente, array_keys($this->cfg['estacoes']['chuva']));
+        $mediaRecente = $this->mediaCabeceira($chuvaRecente, $this->cfg['estacoes']['chuva_cabeceira']);
 
         if ($mediaRecente >= self::CHUVA_INSIGNIFICANTE_MM * 4) {
             return [
@@ -143,7 +143,7 @@ class EventDetector
 
         // 1. Chuva acumulada por estação durante o evento
         $acumulados = $this->chuvaAcumuladaPorEstacao($inicio, $agoraTs);
-        $estacoesChuva = array_keys($this->cfg['estacoes']['chuva']);
+        $estacoesChuva = $this->cfg['estacoes']['chuva_cabeceira'];
         $mediaCabeceira = $this->mediaCabeceira($acumulados, $estacoesChuva);
 
         // 2. Cotas máximas e momento do pico por estação de cota
