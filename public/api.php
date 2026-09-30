@@ -371,20 +371,33 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
 {
     $pisoLeito = $cfg['evento']['cota_minima_leito']['taquari_1_cota'] ?? 12.00;
     $pisos     = $cfg['evento']['cota_minima_leito'];
-    // Defasagens recalibradas por correlação cruzada (Pearson, todo o histórico
-    // de leituras, ~8600 buckets de 15min) entre cada estação e Lajeado —
-    // substituem os valores anteriores, medidos visualmente num único evento
-    // (jul/2026), que estavam superestimados em 2-2,7x. Encantado mantido em 3h
-    // (correlação mais baixa e achatada, 0,60, possível efeito de remanso do
-    // próprio reservatório de Lajeado, não erro de lag). Pesos ainda vêm da
-    // mesma estimativa visual original — não recalibrados nesta rodada.
+    // Defasagens recalibradas por correlação cruzada (Pearson) da TAXA HORÁRIA
+    // de cada estação contra Lajeado, medida evento a evento (4 eventos de cheia
+    // de jul e set/2026) em vez de uma única correlação sobre a série inteira.
+    // Correlacionar a taxa, e não o nível, evita que o nível de base comum às
+    // duas réguas domine e achate o pico da correlação.
+    //
+    // Lag adotado = mediana entre eventos, descartando evento em que a
+    // correlação ficou abaixo de 0,5 (sinal fraco, lag não identificável):
+    //   Encantado 4,25/3,5/4,25h → 4h (era 3h)   r≈0,87-0,91
+    //   Muçum 5,0/4,75/4,0h      → 4,75h          r≈0,81-0,85
+    //   Santa Tereza 5,75/6,25h  → 6h             r≈0,73-0,77
+    //   Linha José Júlio ~5,75h  → 5,75h          r≈0,61-0,76
+    //   Linha Colombo ~10,5h     → 10,5h (era 11,25h)
+    //   Barra do Fão 7,25-9,75h  → 8,5h (era 13,25h — superestimado em 1,6x)
+    //
+    // Pesos: mantidos da estimativa original, ordenados pela força da
+    // correlação com Lajeado (Encantado e Muçum dominam). Como as estações
+    // estão em série no mesmo rio, somar contribuição de todas conta a mesma
+    // água mais de uma vez — os pesos existem para amortecer isso, e o
+    // heurístico é só a salvaguarda de quando o MLR não se aplica.
     $upstream = [
-        'taquari_2_cota'  => ['nome' => 'Encantado',         'lag_h' => 3,     'peso' => 0.45],
-        'taquari_3_cota'  => ['nome' => 'Muçum',             'lag_h' => 4.5,   'peso' => 0.30],
-        'taquari_32_cota' => ['nome' => 'Santa Tereza',      'lag_h' => 5.5,   'peso' => 0.10],
-        'taquari_4_cota'  => ['nome' => 'Linha José Júlio',  'lag_h' => 6,     'peso' => 0.08],
-        'taquari_55_cota' => ['nome' => 'Linha Colombo',     'lag_h' => 11.25, 'peso' => 0.04],
-        'taquari_33_cota' => ['nome' => 'Barra do Fão',      'lag_h' => 13.25, 'peso' => 0.03],
+        'taquari_2_cota'  => ['nome' => 'Encantado',         'lag_h' => 4,    'peso' => 0.45],
+        'taquari_3_cota'  => ['nome' => 'Muçum',             'lag_h' => 4.75, 'peso' => 0.30],
+        'taquari_32_cota' => ['nome' => 'Santa Tereza',      'lag_h' => 6,    'peso' => 0.10],
+        'taquari_4_cota'  => ['nome' => 'Linha José Júlio',  'lag_h' => 5.75, 'peso' => 0.08],
+        'taquari_55_cota' => ['nome' => 'Linha Colombo',     'lag_h' => 10.5, 'peso' => 0.04],
+        'taquari_33_cota' => ['nome' => 'Barra do Fão',      'lag_h' => 8.5,  'peso' => 0.03],
     ];
 
     // Cota atual e taxa de Lajeado
@@ -519,45 +532,68 @@ function routePrevisaoLajeado(\PDO $pdo, array $cfg): array
     // ── Tenta usar modelo MLR calibrado se disponível ─────────────────────────
     $mlrFile = __DIR__ . '/../data/mlr_coefs.json';
     if (file_exists($mlrFile)) {
-        $mlrResult = aplicarMLR($mlrFile, $pdo, $cotaAtual);
-        // Guarda de plausibilidade: o treino só viu 3 eventos de cheia, cobertura
-        // rasa de trajetórias extremas de cota. Fora da faixa vista no treino, a
-        // regressão linear extrapola mal (chegou a projetar -10m/24h num teste
-        // real em cheia). Se o delta previsto passar de ~5x o RMSE de treino, é
-        // sinal de extrapolação — não confia no ponto, cai pro heurístico.
-        $mlrPlausivel = $mlrResult !== null
-            && abs($mlrResult['cota_projetada'] - $cotaAtual) <= 5 * $mlrResult['metricas']['rmse'];
+        $mlrResult = aplicarMLR($mlrFile, $pdo, $cfg, $cotaAtual);
 
-        if ($mlrResult !== null && $mlrPlausivel) {
-            $cotaProj = max($mlrResult['cota_projetada'], $pisoLeito);
-            $situacao = 'normal';
-            if ($cotaProj >= $cfgInundacao) $situacao = 'cheia';
-            elseif ($cotaProj >= $cfgAtencao) $situacao = 'atencao';
+        if ($mlrResult !== null && !empty($mlrResult['pontos'])) {
+            // A curva é feita dos horizontes efetivamente previstos pelo modelo
+            // (3h, 6h, ... 24h) e interpolada só nos vãos entre eles.
+            $curvaHoraria = construirCurvaHorariaMLR(
+                $mlrResult['pontos'], $cotaAtual, $pisoLeito, 24
+            );
 
-            // Curva hora-a-hora: o modelo MLR só prevê o ponto fixo em +24h, então a
-            // trajetória intermediária é interpolada linearmente entre a cota atual
-            // e a cota projetada (não reflete subidas/descidas não-lineares no meio do caminho).
-            $curvaHoraria = construirCurvaHorariaInterpolada($cotaAtual, $cotaProj, $pisoLeito, 24);
+            $ultimo   = end($mlrResult['pontos']);
+            $cotaProj = max($ultimo['cota_projetada_m'], $pisoLeito);
+
+            // Situação avaliada pelo pior caso da curva, não só pelo ponto final:
+            // numa cheia o pico pode acontecer em 12h e já estar baixando em 24h,
+            // e é o pico que importa para alerta.
+            $picoCurva = max(array_column($curvaHoraria, 'cota_projetada_m'));
+            $situacao  = 'normal';
+            if ($picoCurva >= $cfgInundacao)     $situacao = 'cheia';
+            elseif ($picoCurva >= $cfgAtencao)   $situacao = 'atencao';
+
+            // Horizonte confiável: último passo cujo erro médio validado ainda
+            // fica em meio metro — o limite útil para decisão de alerta. Na série
+            // atual isso dá 12h, que é justamente o tempo de resposta da bacia
+            // medido entre a chuva na cabeceira e o pico em Lajeado (11,2-12,8h).
+            // A coincidência não é acaso: até aí a água que definirá a cota já
+            // caiu e está medida nas réguas de montante; depois disso a previsão
+            // passa a depender de chuva que ainda não caiu.
+            $horizonteConfiavel = null;
+            foreach ($mlrResult['pontos'] as $p) {
+                if (($p['erro_medio_m'] ?? 99) <= 0.5) $horizonteConfiavel = $p['horizonte_h'];
+            }
 
             return [
-                'metodo'               => 'mlr_calibrado',
+                'metodo'               => 'mlr_multi_horizonte',
                 'cota_atual_m'         => $cotaAtual,
                 'cota_projetada_24h_m' => round($cotaProj, 2),
                 'delta_esperado_m'     => round($cotaProj - $cotaAtual, 2),
+                'pico_projetado_m'     => round($picoCurva, 2),
                 'situacao_projetada'   => $situacao,
                 'cota_atencao_m'       => $cfgAtencao,
                 'cota_inundacao_m'     => $cfgInundacao,
                 'chuva_media_24h_mm'   => round($chuvaMedia, 1),
                 'chuva_maxima_24h_mm'  => round($chuvaMaxima, 1),
                 'confianca'            => $mlrResult['confianca'],
-                'metricas_modelo'      => $mlrResult['metricas'],
-                'n_amostras_treino'    => $mlrResult['n_amostras'],
+                'horizonte_confiavel_h' => $horizonteConfiavel,
+                'previsoes_por_horizonte' => $mlrResult['pontos'],
+                'validacao'            => $mlrResult['validacao'],
                 'treinado_em'          => $mlrResult['treinado_em'],
+                'versao_modelo'        => $mlrResult['versao'],
                 'estacoes_upstream'    => $detalhes,
                 'curva_horaria'        => $curvaHoraria,
-                'metodo_curva'         => 'interpolacao_linear',
-                'aviso'                => 'Previsão por Regressão Linear Múltipla com defasagens '
-                                       . '(MLR-Lag). NSE=' . $mlrResult['metricas']['nse'] . '.',
+                'metodo_curva'         => 'mlr_por_horizonte',
+                'horizontes_rejeitados' => $mlrResult['rejeitados'],
+                'aviso'                => sprintf(
+                    'Previsão por Regressão Linear Múltipla com defasagens (MLR-Lag v%s), '
+                    . 'um modelo por horizonte. Erro médio validado deixando cada cheia fora '
+                    . 'do treino: %.2fm em 12h e %.2fm em 24h. O tempo de resposta da bacia é '
+                    . '~12h, então além disso a cota passa a depender de chuva que ainda não caiu.',
+                    $mlrResult['versao'],
+                    $mlrResult['validacao']['mae_12h'] ?? 0,
+                    $mlrResult['validacao']['mae_24h'] ?? 0
+                ),
             ];
         }
     }
@@ -699,71 +735,120 @@ function construirCurvaHorariaHeuristica(
 }
 
 /**
- * Constrói uma curva hora a hora por interpolação linear simples entre a cota
- * atual e a cota projetada final — usada quando só existe um único ponto de
- * previsão (ex.: modelo MLR calibrado para horizonte fixo de 24h).
+ * Constrói a curva hora a hora a partir das previsões do MLR por horizonte.
+ *
+ * Os horizontes treinados (3h, 6h, ... 24h) são âncoras previstas pelo modelo;
+ * as horas entre duas âncoras saem por interpolação linear num vão de 3h. É
+ * bem diferente da v2, que traçava uma única reta da cota atual até +24h e por
+ * isso não mostrava pico intermediário: numa cheia a cota pode subir até 12h e
+ * já estar baixando em 24h, e a reta escondia exatamente isso.
+ *
+ * Cada ponto leva a banda de incerteza da âncora correspondente, para o gráfico
+ * poder mostrar que o erro esperado cresce com o horizonte.
+ *
+ * @param array $pontosMlr saída de aplicarMLR()['pontos'], ordenada por horizonte
  */
-function construirCurvaHorariaInterpolada(
+function construirCurvaHorariaMLR(
+    array $pontosMlr,
     float $cotaAtual,
-    float $cotaFinal,
     float $pisoLeito,
     int   $horas
 ): array {
-    $agora  = time();
-    $pontos = [];
+    $agora = time();
 
+    // Âncoras, começando pelo instante atual (hora 0, erro zero)
+    $ancoras = [0 => ['cota' => $cotaAtual, 'p90' => 0.0]];
+    foreach ($pontosMlr as $p) {
+        $ancoras[(int)$p['horizonte_h']] = [
+            'cota' => (float)$p['cota_projetada_m'],
+            'p90'  => (float)($p['banda_p90_m'] ?? 0.0),
+        ];
+    }
+    $hs = array_keys($ancoras);
+    sort($hs);
+    $maxH = max($hs);
+
+    $curva = [];
     for ($h = 1; $h <= $horas; $h++) {
-        $cota = $cotaAtual + ($cotaFinal - $cotaAtual) * ($h / $horas);
-        $cota = max($cota, $pisoLeito);
+        if ($h > $maxH) break; // não extrapola além do maior horizonte treinado
 
-        $pontos[] = [
-            'hora'              => $h,
-            'timestamp'         => date('c', $agora + $h * 3600),
-            'cota_projetada_m'  => round($cota, 3),
+        // Âncoras que cercam esta hora
+        $antes = 0; $depois = $maxH;
+        foreach ($hs as $a) {
+            if ($a <= $h) $antes = $a;
+            if ($a >= $h) { $depois = $a; break; }
+        }
+
+        if ($antes === $depois) {
+            $cota = $ancoras[$h]['cota'];
+            $p90  = $ancoras[$h]['p90'];
+        } else {
+            $frac = ($h - $antes) / ($depois - $antes);
+            $cota = $ancoras[$antes]['cota'] + ($ancoras[$depois]['cota'] - $ancoras[$antes]['cota']) * $frac;
+            $p90  = $ancoras[$antes]['p90']  + ($ancoras[$depois]['p90']  - $ancoras[$antes]['p90'])  * $frac;
+        }
+
+        $cota = max($cota, $pisoLeito);
+        $curva[] = [
+            'hora'             => $h,
+            'timestamp'        => date('c', $agora + $h * 3600),
+            'cota_projetada_m' => round($cota, 3),
+            'banda_p90_m'      => round($p90, 3),
+            'cota_minima_m'    => round(max($cota - $p90, $pisoLeito), 3),
+            'cota_maxima_m'    => round($cota + $p90, 3),
+            'previsto'         => isset($ancoras[$h]) && $h > 0, // âncora do modelo, não interpolação
         ];
     }
 
-    return $pontos;
+    return $curva;
 }
 
 /**
- * Aplica o modelo MLR salvo em JSON sobre as leituras atuais do banco.
- * Retorna null se os dados atuais forem insuficientes para aplicar o modelo.
+ * Aplica o modelo MLR v3 (um conjunto de coeficientes por horizonte) sobre as
+ * leituras atuais, devolvendo uma previsão por horizonte com a banda de
+ * incerteza medida na validação.
+ *
+ * Retorna null se os dados atuais não bastarem, ou se o arquivo for de uma
+ * versão anterior (v2, com um único horizonte) — nesse caso a rota cai no
+ * heurístico e o aviso pede para re-treinar.
  */
-function aplicarMLR(string $mlrFile, \PDO $pdo, float $cotaAtual): ?array
+function aplicarMLR(string $mlrFile, \PDO $pdo, array $cfg, float $cotaAtual): ?array
 {
     $model = json_decode(file_get_contents($mlrFile), true);
-    if (!$model || empty($model['coeficientes'])) return null;
+    if (!$model || empty($model['modelos'])) return null; // v2 ou arquivo inválido
 
-    $coefs       = $model['coeficientes'];
-    $featDef     = $model['features_def'];  // [estacao_id, lag_steps, alias]
-    $estsChuva   = $model['estacoes_chuva'];
-    $step15      = 900; // 15min em segundos
+    $featDef   = $model['features_def'];   // [estacao_id, lag_steps, alias]
+    $estsChuva = $model['estacoes_chuva'];
+    $janelas   = $model['janelas_chuva_h'] ?? [6, 12, 24, 48];
+    $step15    = 900;
 
-    // Calcula janela de dados necessária: max(lag máx das features, 72h de chuva) + buffer.
-    // Bug fix v2: originalmente carregava apenas 12h, mas chuva_48h e chuva_72h
-    // precisam de até 72h de histórico. Sem isso, os acumulados de chuva ficavam truncados.
-    $maxLagSteps  = max(array_column($featDef, 1));
-    $maxLagHoras  = (int)ceil($maxLagSteps * 15 / 60); // steps × 15min → horas
-    $janelaHoras  = max($maxLagHoras, 72) + 4;         // 72h de chuva + 4h de folga
+    // Janela de dados: o bastante para a maior defasagem e para a maior janela
+    // de chuva acumulada, com folga.
+    $maxLagHoras = (int)ceil(max(array_column($featDef, 1)) * 15 / 60);
+    $janelaHoras = max($maxLagHoras, max($janelas)) + 4;
+
     $desde = date('Y-m-d H:i:s', time() - $janelaHoras * 3600);
     $stmt  = $pdo->prepare(
-        "SELECT estacao_id, tipo, timestamp, valor
-         FROM leituras
-         WHERE timestamp >= :desde"
+        "SELECT estacao_id, tipo, timestamp, valor FROM leituras WHERE timestamp >= :desde"
     );
     $stmt->execute([':desde' => $desde]);
 
-    // Agrupa em buckets de 15min em PHP (portável entre SQLite e PostgreSQL,
-    // substituindo date_trunc/EXTRACT/INTERVAL específicos do Postgres).
+    // Buckets de 15min em PHP (portável entre SQLite e PostgreSQL), descartando
+    // leitura acima do teto físico da régua — mesmo filtro do treino, senão um
+    // defeito de sensor entra direto na previsão.
+    $tetos   = $cfg['evento']['cota_maxima_fisica'] ?? [];
     $buckets = [];
     foreach ($stmt->fetchAll() as $r) {
-        $ts15 = intdiv((int)strtotime($r['timestamp']), 900) * 900;
-        $key  = $r['estacao_id'] . '|' . $r['tipo'] . '|' . $ts15;
+        $valor = (float)$r['valor'];
+        $teto  = $tetos[$r['estacao_id']] ?? null;
+        if ($teto !== null && $valor > $teto) continue;
+
+        $ts15 = intdiv((int)strtotime($r['timestamp']), $step15) * $step15;
+        $key  = $r['estacao_id'] . '|' . $ts15;
         if (!isset($buckets[$key])) {
             $buckets[$key] = ['estacao_id' => $r['estacao_id'], 'ts' => $ts15, 'soma' => 0.0, 'n' => 0];
         }
-        $buckets[$key]['soma'] += (float)$r['valor'];
+        $buckets[$key]['soma'] += $valor;
         $buckets[$key]['n']++;
     }
 
@@ -772,16 +857,15 @@ function aplicarMLR(string $mlrFile, \PDO $pdo, float $cotaAtual): ?array
         $series[$b['estacao_id']][$b['ts']] = $b['soma'] / $b['n'];
     }
 
-    // Timestamp base: última leitura de Lajeado
     if (empty($series['taquari_1_cota'])) return null;
     $tBase = max(array_keys($series['taquari_1_cota']));
 
-    // Monta vetor de features — busca leitura mais próxima em janela de ±2h
+    // Vetor de features, na mesma ordem em que o treino as gerou
     $vec = [];
-    foreach ($featDef as [$id, $lagSteps, $alias]) {
+    foreach ($featDef as [$id, $lagSteps, $_alias]) {
         $tsFeat = $tBase - $lagSteps * $step15;
         $v = null;
-        for ($off = 0; $off <= 8; $off++) { // 8 passos × 15min = 2h
+        for ($off = 0; $off <= 8; $off++) { // tolera gap de até 2h
             $v = $series[$id][$tsFeat + $off * $step15]
               ?? $series[$id][$tsFeat - $off * $step15]
               ?? null;
@@ -790,46 +874,90 @@ function aplicarMLR(string $mlrFile, \PDO $pdo, float $cotaAtual): ?array
         if ($v === null) return null;
         $vec[] = $v;
     }
-
-    // Chuva 24h, 48h e 72h (janelas calibradas nos eventos jul/2026)
-    $chuva24h = 0.0; $chuva48h = 0.0; $chuva72h = 0.0; $nch = 0;
-    foreach ($estsChuva as $eid) {
-        if (!isset($series[$eid])) continue;
-        $s24 = 0.0; $s48 = 0.0; $s72 = 0.0;
-        for ($i = 1; $i <= 96;  $i++) $s24 += $series[$eid][$tBase - $i * $step15] ?? 0;
-        for ($i = 1; $i <= 192; $i++) $s48 += $series[$eid][$tBase - $i * $step15] ?? 0;
-        for ($i = 1; $i <= 288; $i++) $s72 += $series[$eid][$tBase - $i * $step15] ?? 0;
-        $chuva24h += $s24; $chuva48h += $s48; $chuva72h += $s72; $nch++;
-    }
-    $vec[] = $nch > 0 ? $chuva24h / $nch : 0.0;
-    $vec[] = $nch > 0 ? $chuva48h / $nch : 0.0;
-    // chuva_72h: incluída apenas se o modelo foi treinado com ela (v2+)
-    if (in_array('chuva_72h', $model['features'], true)) {
-        $vec[] = $nch > 0 ? $chuva72h / $nch : 0.0;
+    foreach ($janelas as $h) {
+        $n = $h * 4; $tot = 0.0; $k = 0;
+        foreach ($estsChuva as $eid) {
+            if (!isset($series[$eid])) continue;
+            $s = 0.0;
+            for ($i = 1; $i <= $n; $i++) $s += $series[$eid][$tBase - $i * $step15] ?? 0.0;
+            $tot += $s; $k++;
+        }
+        $vec[] = $k > 0 ? $tot / $k : 0.0;
     }
     $vec[] = 1.0; // intercept
 
-    // Aplica β · x
-    $coefVals = array_values($coefs);
-    $pred = 0.0;
-    foreach ($coefVals as $i => $b) {
-        $pred += $b * ($vec[$i] ?? 0.0);
+    // Aplica cada horizonte
+    $pontos = []; $rejeitados = []; $piorMae = 0.0;
+    $horizontes = array_map('intval', array_keys($model['modelos']));
+    sort($horizontes);
+
+    foreach ($horizontes as $H) {
+        $m = $model['modelos'][(string)$H];
+        $coefs = array_values($m['coeficientes']);
+        if (count($coefs) !== count($vec)) continue; // modelo incompatível
+
+        $pred = 0.0;
+        foreach ($coefs as $i => $b) $pred += $b * $vec[$i];
+
+        // Guarda de plausibilidade auto-calibrada: rejeita delta fora da faixa
+        // de variação já observada neste horizonte em toda a série (com 30% de
+        // folga). A regressão extrapola mal fora do que viu — a v2 chegou a
+        // projetar -10m/24h durante uma cheia real.
+        $delta = $pred - $cotaAtual;
+        $obs   = $m['delta_observado'] ?? null;
+        if ($obs !== null) {
+            $limInf = $obs['min'] * 1.3;
+            $limSup = $obs['max'] * 1.3;
+            if ($delta < $limInf || $delta > $limSup) {
+                $rejeitados[] = [
+                    'horizonte_h' => $H,
+                    'delta_previsto_m' => round($delta, 2),
+                    'faixa_observada_m' => [$obs['min'], $obs['max']],
+                ];
+                continue;
+            }
+        }
+
+        $loo = $m['validacao_loo'] ?? null;
+        $mae = $loo['mae'] ?? null;
+        if ($mae !== null) $piorMae = max($piorMae, (float)$mae);
+
+        $pontos[] = [
+            'horizonte_h'      => $H,
+            'cota_projetada_m' => round($pred, 3),
+            // Banda de incerteza = P90 do erro medido na validação por evento.
+            // É o erro em cheias que o modelo não viu no treino, não o resíduo
+            // do próprio ajuste.
+            'erro_medio_m'     => $mae !== null ? (float)$mae : null,
+            'banda_p90_m'      => isset($loo['p90']) ? (float)$loo['p90'] : null,
+            'cota_minima_m'    => isset($loo['p90']) ? round($pred - $loo['p90'], 2) : null,
+            'cota_maxima_m'    => isset($loo['p90']) ? round($pred + $loo['p90'], 2) : null,
+        ];
     }
 
-    // Confiança baseada em NSE e número de amostras de treino
-    $nse = $model['metricas']['nse'] ?? 0;
+    if (empty($pontos)) return null;
+
+    // Confiança pelo erro validado do horizonte mais longo aceito
     $confianca = match (true) {
-        $nse >= 0.85 && $model['n_amostras'] >= 500 => 'moderada',
-        $nse >= 0.70 && $model['n_amostras'] >= 100 => 'baixa',
-        default                                       => 'muito_baixa',
+        $piorMae > 0 && $piorMae <= 0.60 => 'moderada',
+        $piorMae > 0 && $piorMae <= 1.50 => 'baixa',
+        default                          => 'muito_baixa',
     };
 
+    $mae = fn(int $h) => $model['modelos'][(string)$h]['validacao_loo']['mae'] ?? null;
+
     return [
-        'cota_projetada' => $pred,
-        'confianca'      => $confianca,
-        'metricas'       => $model['metricas'],
-        'n_amostras'     => $model['n_amostras'],
-        'treinado_em'    => $model['treinado_em'],
+        'pontos'      => $pontos,
+        'confianca'   => $confianca,
+        'rejeitados'  => $rejeitados,
+        'versao'      => $model['versao'] ?? '3.0',
+        'treinado_em' => $model['treinado_em'] ?? null,
+        'validacao'   => [
+            'metodo'    => $model['metodo_validacao'] ?? 'leave-one-event-out',
+            'mae_12h'   => $mae(12),
+            'mae_24h'   => $mae(24),
+            'n_eventos' => $model['modelos'][(string)end($horizontes)]['validacao_loo']['n_eventos'] ?? null,
+        ],
     ];
 }
 

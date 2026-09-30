@@ -66,6 +66,158 @@ Vacaria · Ibiraiaras · Guaporé · Passo Carreiro · Santa Tereza · Linha Col
 
 ---
 
+## Previsão de cota em Lajeado — como funciona e até onde vale
+
+### Modelo MLR-Lag v3 (multi-horizonte)
+
+`scripts/train_mlr.php` treina uma **regressão linear múltipla com defasagens**
+(Ridge, λ=0,1) que prevê a cota em Lajeado, com **um modelo por horizonte**
+(3 h, 6 h, … 24 h). As entradas são as cotas das réguas de montante e suas
+tendências, mais a chuva acumulada em 6 h/12 h/24 h/48 h.
+
+```bash
+php scripts/train_mlr.php                      # todos os horizontes
+php scripts/train_mlr.php --horizontes=6,12    # só alguns
+```
+
+O treino leva ~5 s e o `cron/collect.php` o dispara sozinho quando um evento de
+cheia fecha (é quando entra um caso novo na validação e na razão chuva/cota) ou
+quando o modelo passa de 7 dias. Roda em processo separado, então uma falha no
+treino não interrompe a coleta. O `data/mlr_coefs.json` não é versionado: cada
+instalação gera o seu.
+
+### O limite de previsibilidade é ~12 h — e o sistema é explícito sobre isso
+
+O tempo medido entre o centro de massa da chuva na cabeceira e o pico em Lajeado
+é **11,2 h a 12,8 h** nos quatro eventos observados (desvio baixo). Esse é o
+tempo de resposta da bacia, e portanto o alcance em que a previsão é
+determinística: a cota daqui a 12 h **já está dentro da bacia**, medida pelas
+réguas de montante. Além disso, ela passa a depender de chuva que ainda não caiu.
+
+A validação confirma o degrau com precisão — erro médio por horizonte, medido
+deixando cada cheia inteira fora do treino:
+
+| Horizonte | Erro médio (MAE) | P90 | Erro no pico | Ganho sobre persistência |
+|---|---|---|---|---|
+| 3 h  | 0,18 m | 0,39 m | 0,13 m | +60% |
+| 6 h  | 0,26 m | 0,60 m | 0,24 m | +72% |
+| 12 h | **0,48 m** | 1,00 m | 0,52 m | +73% |
+| 18 h | 0,80 m | 2,15 m | 1,00 m | +69% |
+| 24 h | 1,15 m | 3,42 m | 1,52 m | +64% |
+
+Por isso a interface destaca a previsão de **12 h** e mostra a de 24 h sempre
+acompanhada da sua banda de erro, nunca como número isolado. O gráfico desenha a
+faixa de incerteza, que cresce com o horizonte.
+
+### Validação: leave-one-event-out, não erro de treino
+
+A v2 reportava NSE = 0,87 medido **no próprio conjunto de treino**, o que não diz
+nada sobre prever uma cheia nova. A v3 valida deixando cada evento de cheia
+inteiro fora do treino e medindo dentro dele — descartando também as amostras
+cujo alvo cai no evento, senão o alvo vaza para o treino.
+
+Medido assim, o modelo v2 **errava o pico da cheia de set/2026 em −5,25 m**, ou
+seja, subestimava a cheia em mais de cinco metros. Esse erro era invisível na
+métrica que ele publicava.
+
+### O que mudou da v2 para a v3, e por quê
+
+1. **Filtro de leitura espúria.** O SGB entregou 53 leituras de Encantado entre
+   39 m e 50 m em 18-19/07/2026 — onde a cota de inundação é 12 m. Elas
+   envenenavam o treino e a calibração de defasagens (o lag Muçum→Encantado saía
+   em 16,25 h, contra ~1 h nos outros eventos). Filtrá-las derrubou o erro no
+   evento de jul/2026 de 2,52 m para 1,03 m. Tetos em `cota_maxima_fisica`.
+
+2. **Chuva da sub-bacia de resposta rápida.** Em vez da média das 7 estações de
+   cabeceira, o modelo usa só os postos cuja chuva chega a Lajeado dentro do
+   horizonte de previsão (Santa Tereza, Linha Colombo, Barra do Fão). O erro no
+   pico em 24 h caiu de 2,93 m para 1,52 m. Motivo: Vacaria e Ibiraiaras ficam na
+   cabeceira alta, com lag maior que o horizonte útil, e em set/2026 choveu ~0 mm
+   lá enquanto choveu 140-180 mm nos postos de baixo — a média entre sete
+   estações dilui justamente a chuva que gerou a cheia.
+
+3. **Janelas de chuva curtas** (6 h/12 h) em lugar de 72 h, que diluía o evento
+   em curso.
+
+4. **Curva horária prevista, não interpolada.** A v2 traçava uma reta da cota
+   atual até +24 h, então não mostrava pico intermediário — numa cheia a cota
+   pode subir até 12 h e já estar baixando em 24 h, e a reta escondia isso.
+
+5. **Guarda de plausibilidade auto-calibrada.** Cada horizonte guarda a faixa de
+   variação já observada na série; previsão fora dela (com 30% de folga) é
+   descartada como extrapolação. Substitui o múltiplo fixo de RMSE.
+
+### Defasagens entre estações (recalibradas)
+
+Medidas por correlação cruzada da **taxa horária** de cada estação contra
+Lajeado, evento a evento — correlacionar a taxa, e não o nível, evita que o
+nível de base comum às duas réguas domine e achate o pico da correlação. Adotado
+o valor mediano entre eventos, descartando evento cuja correlação ficou abaixo
+de 0,5:
+
+| Estação | Lag até Lajeado | Antes | r |
+|---|---|---|---|
+| Encantado | 4 h | 3 h | 0,87-0,91 |
+| Muçum | 4,75 h | 4,5 h | 0,81-0,85 |
+| Santa Tereza | 6 h | 5,5 h | 0,73-0,77 |
+| Linha José Júlio | 5,75 h | 6 h | 0,61-0,76 |
+| Linha Colombo | 10,5 h | 11,25 h | 0,50-0,79 |
+| Barra do Fão | 8,5 h | 13,25 h | 0,45-0,75 |
+
+Barra do Fão estava superestimada em 1,6×.
+
+### Razão chuva/cota corrigida pela concentração espacial
+
+A razão média simples é um preditor ruim: nos quatro eventos ela varia de 9,1 a
+23,5 mm/m (desvio 6,5), o que torna o intervalo de confiança quase inútil. A
+variação **não é ruído** — ela acompanha a distribuição espacial da chuva, medida
+pelo coeficiente de variação (CV = desvio/média) entre os postos de cabeceira:
+
+| Evento | CV | Razão | Padrão |
+|---|---|---|---|
+| jul/20 | 0,22 | 21,0 | frontal, espalhada por toda a bacia |
+| jul/28 | 0,27 | 23,5 | idem |
+| set/28 | 0,90 | 14,4 | concentrada na cabeceira média/baixa |
+| set/21 | 1,09 | 9,1 | idem, mais concentrada |
+
+Quanto mais concentrada a chuva, **menos milímetros médios** bastam por metro de
+cheia. O motivo é de medição, não de física: a média aritmética divide a chuva
+por toda a cabeceira, inclusive onde não choveu, e subestima a lâmina que caiu
+sobre a área que gerou o escoamento.
+
+`Projector` ajusta `razão = A·exp(B·CV)` sobre os eventos fechados (recalibrado a
+cada evento novo, R² ≈ 0,90), o que reduz o desvio residual de 6,5 para
+2,5 mm/m — o intervalo de confiança encolhe cerca de 60%. O efeito prático: um
+cenário concentrado de 77 mm médios projeta cota **maior** (26,2 m) que um
+espalhado de 100 mm (23,3 m), que é exatamente o que ocorreu em set/2026, quando
+49,5 mm médios levaram a 24,46 m enquanto 117,3 mm levaram a 23,99 m.
+
+**Ressalva:** quatro eventos é pouco para uma lei empírica. O efeito é
+consistente e tem explicação clara, mas os coeficientes vão mudar conforme a
+série cresce. A alternativa correta a médio prazo é ponderar a chuva por área de
+contribuição (polígonos de Thiessen), que dispensa a correção.
+
+### O que ainda não está resolvido
+
+- **Sem previsão de chuva (QPF).** É o que trava o horizonte em ~12 h. Acoplar
+  previsão meteorológica é o único caminho para 24-48 h com erro aceitável.
+- **Amostra pequena:** quatro eventos de cheia. Toda calibração aqui é
+  provisória.
+- **Muskingum-Cunge** (celeridade variável com o nível) segue não implementado.
+  Os dados mostram lag menor nos eventos mais intensos, mas sem relação limpa o
+  bastante para calibrar com quatro casos.
+- **Sem curva-chave.** Testei linearizar o roteamento com pseudo-vazão
+  `(h−h₀)^β` para β = 1,0/1,4/1,67/2,0 (Manning): **β = 1,0 venceu em todos os
+  eventos** (r = 0,982-0,997), então a relação nível-nível entre Encantado e
+  Lajeado já é praticamente linear na faixa observada e não vale complicar.
+- **O fator AMC não se sustentou.** Testei o API (*Antecedent Precipitation
+  Index*, k = 0,9/dia) contra a eficiência chuva→cota e **não há relação
+  monotônica**: jul/20 teve API de 9,9 mm e razão alta (21,0), jul/28 teve API de
+  105 mm e razão igualmente alta (23,5). A condição antecedente não é o driver
+  dominante nesta bacia — a distribuição espacial da chuva é.
+
+---
+
 ## Instalação
 
 ### Pré-requisitos
@@ -216,9 +368,18 @@ razão chuva/cota) se baseia em:
   de calibração, complementar ao modelo estatístico (MLR) e ao heurístico
   atuais; ainda não implementado.
 
-Defasagens entre estações upstream e Lajeado usadas no heurístico de previsão
-foram recalibradas por correlação cruzada (Pearson) sobre todo o histórico de
-leituras coletado, não apenas observação visual de um único evento.
+Defasagens entre estações upstream e Lajeado foram recalibradas por correlação
+cruzada (Pearson) da taxa horária, evento a evento — ver
+[Previsão de cota em Lajeado](#previsão-de-cota-em-lajeado--como-funciona-e-até-onde-vale).
+
+- **Kohler, M.A.; Linsley, R.K. (1951).** *Predicting the runoff from storm
+  rainfall.* US Weather Bureau Research Paper 34. — origem do API (*Antecedent
+  Precipitation Index*), testado aqui como proxy de umidade antecedente: nos 4
+  eventos observados **não** apresentou relação monotônica com a eficiência
+  chuva→cota, e por isso não foi adotado.
+- **Polígonos de Thiessen** (chuva média ponderada por área de contribuição,
+  ver Chow 1988) — caminho indicado para substituir a correção empírica por
+  concentração espacial hoje aplicada na razão chuva/cota.
 
 ### Previsibilidade e incerteza em previsão de cheias
 

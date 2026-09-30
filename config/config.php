@@ -51,6 +51,24 @@ return [
             'taquari_9_chuva', 'taquari_12_chuva', 'taquari_31_chuva',
             'taquari_54_chuva', 'taquari_32_chuva', 'taquari_55_chuva', 'taquari_33_chuva',
         ],
+        // Sub-bacia de resposta rápida: postos da cabeceira média/baixa, cuja
+        // chuva chega em Lajeado em ~8-12h — dentro do horizonte de previsão.
+        //
+        // A validação leave-one-event-out (4 eventos, set/2026) mostrou que usar
+        // SÓ estes postos como preditor de chuva no MLR é bem melhor que a média
+        // das 7 estações de cabeceira: em 24h o erro de pico caiu de 2,93m para
+        // 1,52m. Motivo: Vacaria e Ibiraiaras ficam na cabeceira alta, com lag
+        // maior que o horizonte útil, e nos eventos de set/2026 choveu ~0mm lá
+        // enquanto choveu 140-180mm aqui. Incluí-las na média divide por 7 e
+        // dilui o sinal da chuva que de fato gerou a cheia.
+        'chuva_resposta_rapida' => [
+            'taquari_32_chuva', 'taquari_55_chuva', 'taquari_33_chuva',
+        ],
+        // Cabeceira alta/distante — lag > horizonte de previsão. Mantida na
+        // coleta e no cálculo da razão histórica, fora das features do MLR.
+        'chuva_cabeceira_alta' => [
+            'taquari_9_chuva', 'taquari_12_chuva', 'taquari_31_chuva', 'taquari_54_chuva',
+        ],
         'cota' => [
             'taquari_33_cota' => 'Barra do Fão',
             'taquari_4_cota'  => 'Linha José Júlio',  // entre cabeceiras e Santa Tereza
@@ -103,6 +121,32 @@ return [
             'taquari_55_cota' => (float)($_ENV['COTA_INUNDACAO_LINHA_COLOMBO']    ?? 12.50),
             'taquari_5_cota'  => (float)($_ENV['COTA_INUNDACAO_BOM_RETIRO_SUL']   ?? 16.50),
             'taquari_6_cota'  => (float)($_ENV['COTA_INUNDACAO_MARIANTE']         ?? 14.00),
+        ],
+        /*
+         * Teto físico plausível de cada régua (metros). Leitura acima disso é
+         * defeito de sensor/telemetria, não cheia, e é descartada antes de
+         * treinar ou prever.
+         *
+         * Motivo: o SGB entregou 53 leituras de Encantado entre 39m e 50m em
+         * 18-19/07/2026 — a cota de inundação lá é 12m e o recorde histórico da
+         * régua é ~16m. Essas leituras contaminavam o treino do MLR e a
+         * correlação cruzada usada pra calibrar defasagens (o lag
+         * Muçum→Encantado saía em 16,25h, contra ~1h nos outros eventos).
+         * Filtrá-las derrubou o MAE do evento de jul/2026 de 2,52m pra 1,03m.
+         *
+         * Valores = cota de inundação + folga generosa, acima de qualquer
+         * máxima já registrada na série.
+         */
+        'cota_maxima_fisica' => [
+            'taquari_1_cota'  => (float)($_ENV['COTA_MAX_FIS_LAJEADO']       ?? 30.00),
+            'taquari_2_cota'  => (float)($_ENV['COTA_MAX_FIS_ENCANTADO']     ?? 20.00),
+            'taquari_3_cota'  => (float)($_ENV['COTA_MAX_FIS_MUCUM']         ?? 26.00),
+            'taquari_4_cota'  => (float)($_ENV['COTA_MAX_FIS_LJ_JULIO']      ?? 25.00),
+            'taquari_32_cota' => (float)($_ENV['COTA_MAX_FIS_STA_TEREZA']    ?? 23.00),
+            'taquari_33_cota' => (float)($_ENV['COTA_MAX_FIS_BARRA_FAO']     ?? 16.00),
+            'taquari_55_cota' => (float)($_ENV['COTA_MAX_FIS_LINHA_COLOMBO'] ?? 18.00),
+            'taquari_5_cota'  => (float)($_ENV['COTA_MAX_FIS_BOM_RETIRO']    ?? 24.00),
+            'taquari_6_cota'  => (float)($_ENV['COTA_MAX_FIS_MARIANTE']      ?? 22.00),
         ],
         // nível mínimo do leito (piso físico para previsões — atualizar com zero hidrométrico oficial)
         'cota_minima_leito' => [
