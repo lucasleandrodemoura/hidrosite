@@ -928,6 +928,14 @@ async function carregarPrevisaoLajeado() {
     const chuva  = d.chuva_media_24h_mm;
     const conf   = d.confianca;
     const est    = d.estacoes_upstream ?? {};
+    const porHor = d.previsoes_por_horizonte ?? [];
+
+    // Previsão de 12h: é o alcance em que o modelo é confiável, porque a chuva
+    // que define a cota dentro de 12h já caiu e está medida nas réguas de
+    // montante. Além disso a cota depende de chuva futura, então o número de
+    // 24h aparece junto da sua banda de erro, não sozinho.
+    const p12 = porHor.find(p => p.horizonte_h === 12);
+    const p24 = porHor.find(p => p.horizonte_h === 24);
 
     // Cor e seta do delta
     let deltaCor = '#888', deltaIcon = '→';
@@ -955,20 +963,43 @@ async function carregarPrevisaoLajeado() {
       ? `🌧 ${chuva.toFixed(0)}mm/24h nas cabeceiras`
       : 'Sem chuva significativa nas cabeceiras';
 
-    const confLabel = { baixa: 'confiança baixa', muito_baixa: 'confiança muito baixa', insuficiente: 'dados insuficientes' }[conf] ?? conf;
+    const confLabel = { moderada: 'confiança moderada', baixa: 'confiança baixa', muito_baixa: 'confiança muito baixa', insuficiente: 'dados insuficientes' }[conf] ?? conf;
     const deltaTexto = Math.abs(delta) >= 0.05
       ? `${deltaIcon} ${delta > 0 ? '+' : ''}${delta.toFixed(2)}m`
       : '→ estável';
 
+    // Valor em destaque: 12h quando o modelo multi-horizonte está ativo (é o
+    // alcance confiável); 24h quando só há o heurístico.
+    const destaque = p12 ?? null;
+    const cotaDest = destaque ? destaque.cota_projetada_m : cotaP;
+    const horaDest = destaque ? 12 : 24;
+
+    let corDest = '#1a6faf';
+    if (cotaDest >= d.cota_inundacao_m)    corDest = '#c0392b';
+    else if (cotaDest >= d.cota_atencao_m) corDest = '#e07b00';
+
+    const banda = b => (b?.banda_p90_m != null ? ` ±${b.banda_p90_m.toFixed(2)}m` : '');
+
+    const linha24 = p24
+      ? `<div class="prev-detalhes">Em 24h: <b>${p24.cota_projetada_m.toFixed(2)}m</b>${banda(p24)}
+           <span style="color:#bbb">— depende de chuva ainda não caída</span></div>`
+      : '';
+
+    const metodoLabel = d.metodo === 'mlr_multi_horizonte'
+      ? `Modelo MLR-Lag v${d.versao_modelo ?? '3'} · erro validado ${destaque?.erro_medio_m != null ? '±' + destaque.erro_medio_m.toFixed(2) + 'm em 12h' : ''}`
+      : 'Estimativa heurística';
+
     box.innerHTML = `
-      <div class="prev-header"><span>🔮</span> Previsão 24h — se as condições atuais continuarem</div>
+      <div class="prev-header"><span>🔮</span> Previsão ${horaDest}h — se as condições atuais continuarem</div>
       <div style="display:flex;align-items:baseline;gap:.35rem">
-        <span class="prev-valor" style="color:${corCota}">~${cotaP.toFixed(2)} m</span>
+        <span class="prev-valor" style="color:${corDest}">~${cotaDest.toFixed(2)} m</span>
         <span class="prev-delta" style="color:${deltaCor}">${deltaTexto}</span>
+        ${destaque?.banda_p90_m != null ? `<span style="font-size:.66rem;color:#aaa">±${destaque.banda_p90_m.toFixed(2)}m</span>` : ''}
       </div>
+      ${linha24}
       ${resumoEst ? `<div class="prev-detalhes">${resumoEst}</div>` : ''}
       <div class="prev-detalhes">${chuvaTexto}</div>
-      <div class="prev-conf">Estimativa heurística · ${confLabel}</div>`;
+      <div class="prev-conf">${metodoLabel} · ${confLabel}</div>`;
 
   } catch {
     const box2 = document.getElementById('previsao-lajeado-box');
@@ -1201,18 +1232,40 @@ async function carregarGrafico() {
         // estações upstream, chuva e encharcamento do solo); para as demais,
         // extrapola localmente a taxa de variação da própria série.
         try {
-          let pontosProjecao;
+          let pontosProjecao, curvaPrev = null;
           if (modalEstacaoId === 'taquari_1_cota') {
             const prev = await api('/previsao-lajeado');
-            pontosProjecao = (prev.status !== 'sem_dados' && Array.isArray(prev.curva_horaria))
-              ? prev.curva_horaria.map(p => ({ x: new Date(p.timestamp), y: p.cota_projetada_m }))
-              : null;
+            if (prev.status !== 'sem_dados' && Array.isArray(prev.curva_horaria)) {
+              curvaPrev = prev.curva_horaria;
+              pontosProjecao = curvaPrev.map(p => ({ x: new Date(p.timestamp), y: p.cota_projetada_m }));
+            } else {
+              pontosProjecao = null;
+            }
           } else {
             pontosProjecao = construirProjecaoLocal(serie);
           }
 
           if (pontosProjecao && pontosProjecao.length) {
             const ultimoPonto = { x: labels[labels.length - 1], y: values[values.length - 1] };
+
+            // Faixa de incerteza: mostra o erro que o modelo cometeu em cheias
+            // que ficaram fora do treino, e que cresce com o horizonte. Sem ela
+            // a linha tracejada passa a impressão de precisão que não existe.
+            if (curvaPrev && curvaPrev.some(p => p.banda_p90_m > 0)) {
+              datasets.push({
+                label: 'Faixa de incerteza',
+                data: [ultimoPonto, ...curvaPrev.map(p => ({ x: new Date(p.timestamp), y: p.cota_maxima_m }))],
+                borderColor: 'transparent', pointRadius: 0, fill: '+1',
+                backgroundColor: 'rgba(142,68,173,.12)', tension: .25, type: 'line',
+              });
+              datasets.push({
+                label: 'Faixa de incerteza (inferior)',
+                data: [ultimoPonto, ...curvaPrev.map(p => ({ x: new Date(p.timestamp), y: p.cota_minima_m }))],
+                borderColor: 'transparent', pointRadius: 0, fill: false,
+                tension: .25, type: 'line',
+              });
+            }
+
             datasets.push({
               label: 'Projeção 24h',
               data: [ultimoPonto, ...pontosProjecao],
@@ -1292,7 +1345,15 @@ async function carregarGrafico() {
         maintainAspectRatio: false,
         interaction: { mode:'index', intersect: isCota ? false : true },
         plugins: {
-          legend: { position:'top', labels:{ boxWidth:12, font:{size:11} } },
+          legend: {
+            position:'top',
+            labels:{
+              boxWidth:12, font:{size:11},
+              // A faixa de incerteza é desenhada com dois datasets (topo e base);
+              // só o de topo entra na legenda, e o auxiliar fica de fora.
+              filter: item => item.text !== 'Faixa de incerteza (inferior)',
+            }
+          },
           tooltip: {
             callbacks: {
               label: ctx => {

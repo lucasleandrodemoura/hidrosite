@@ -42,6 +42,35 @@ $detector = new EventDetector($pdo, $logger, $cfg);
 $acao     = $detector->verificar();
 
 $logger->info("Detector de eventos", $acao);
+
+// 3. Re-treina o modelo de previsão quando há informação nova de calibração.
+//
+// Gatilhos: um evento de cheia acabou de fechar (é quando entra um caso novo na
+// validação e na razão chuva/cota), ou o modelo não existe, ou passou de 7 dias.
+// Roda em processo separado para que uma falha no treino não interrompa a coleta,
+// que é a função crítica deste job.
+$modeloFile = __DIR__ . '/../data/mlr_coefs.json';
+$fechouEvento = ($acao['acao'] ?? '') === 'fechado';
+$modeloVelho  = !file_exists($modeloFile)
+              || (time() - filemtime($modeloFile)) > 7 * 86400;
+
+if ($fechouEvento || $modeloVelho) {
+    $motivo = $fechouEvento ? 'evento fechado' : 'modelo ausente ou com mais de 7 dias';
+    $logger->info("Re-treinando modelo de previsão ({$motivo})");
+
+    $cmd = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__DIR__ . '/../scripts/train_mlr.php') . ' 2>&1';
+    exec($cmd, $saida, $codigo);
+
+    if ($codigo === 0) {
+        $logger->info('Modelo re-treinado', ['linhas_saida' => count($saida)]);
+    } else {
+        $logger->error('Falha ao re-treinar modelo', [
+            'codigo' => $codigo,
+            'saida'  => implode(' | ', array_slice($saida, -3)),
+        ]);
+    }
+}
+
 $logger->info('=== Fim da coleta ===');
 
 // Saída para console (útil em execuções manuais)
